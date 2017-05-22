@@ -6,10 +6,13 @@ use std::fs::File;
 
 mod cart;
 mod snes;
+mod inst;
 mod cpu;
+mod mem;
 
 use cart::{SnesCart, SnesHeader};
 use snes::SNES;
+use cpu::Ricoh5A22;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 const AUTHORS: &'static str = env!("CARGO_PKG_AUTHORS");
@@ -36,8 +39,7 @@ fn main() {
     file.read_to_end(&mut rom_raw).unwrap();
 
     let mut snes = SNES::new(rom_raw);
-
-    println!("{:?}", SnesHeader::from(SnesCart::from(snes.clone())));
+    println!("Done");
 
     let stdin = io::stdin();
     loop {
@@ -50,7 +52,10 @@ fn main() {
         match line.trim() {
             "q" => break,
             "r" => snes.reset(),
-            _ => {}
+            "s" => snes.step(),
+            "c" => println!("{:?}", Ricoh5A22::from(snes.clone())),
+            "h" => println!("{:?}", SnesHeader::from(SnesCart::from(snes.clone()))),
+            _ => print!("Unknown command: {}", line)
         }
     }
 }
