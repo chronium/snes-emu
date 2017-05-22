@@ -1,0 +1,9 @@
+[package]
+name = "snes-emu"
+version = "0.1.0"
+authors = ["Chronium onlivechronium@gmail.com"]
+
+[dependencies]
+clap = "2.19"
+bitflags = "*"
+minifb = "*"
