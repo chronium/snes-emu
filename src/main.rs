@@ -1,5 +1,9 @@
+#![feature(range_contains)]
+
 #[macro_use]
 extern crate clap;
+#[macro_use]
+extern crate bitflags;
 
 use std::io::{self, Read, BufRead, Write};
 use std::fs::File;
