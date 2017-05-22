@@ -1,8 +1,5 @@
 use cart::SnesCart;
 
-use std::collections::HashMap;
-use std::ops::Range;
-
 #[derive(Clone)]
 pub struct Memory {
     cart: SnesCart,
