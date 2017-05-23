@@ -38,14 +38,15 @@ macro_rules! immediate8 {
 
 #[derive(Debug)]
 pub enum Opcode {
-    CLC,
-    SEI,
-    STA,
-    STZ,
-    LDA,
-    REP,
-    SEP,
-    XCE,
+    CLC,        // 0x18
+    TCD,        // 0x5B
+    SEI,        // 0x78
+    STA,        // 0x8D
+    STZ,        // 0x9C
+    LDA,        // 0xA9
+    REP,        // 0xC2
+    SEP,        // 0xE2
+    XCE,        // 0xFB
     Unknown(u8), 
 }
 
@@ -55,6 +56,7 @@ impl Instruction {
     pub fn from(cpu: &mut Ricoh5A22, mem: &Memory) -> Instruction {
         match cpu.read_u8(mem) {
             0x18 => implied!(CLC),                                  // 0x18 CLC
+            0x5B => implied!(TCD),                                  // 0x18 TCD/TAD
             0x78 => implied!(SEI),                                  // 0x78 SEI
             0x8D => absolute!(STA, cpu, mem),                       // 0x8D STA addr
             0x9C => absolute!(STZ, cpu, mem),                       // 0x9C STZ addr
