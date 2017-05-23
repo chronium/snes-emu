@@ -23,22 +23,29 @@ macro_rules! implied {
 }
 
 macro_rules! absolute {
-    ($instr:ident, $cpu:ident, $mem:ident) => (Instruction(Opcode::$instr, Value::Absolute($cpu.read_u16($mem))))
+    ($instr:ident, $cpu:ident, $mem:ident) => (Instruction(Opcode::$instr, Value::Absolute($cpu.read_u16_pc($mem))))
 }
 
 macro_rules! immediate_m {
     ($instr:ident, $cpu:ident, $mem:ident) => (match $cpu.p_reg.contains(FLAG_M) {
-        true => Instruction(Opcode::$instr, Value::Immediate8($cpu.read_u8($mem))),
-        false => Instruction(Opcode::$instr, Value::Immediate16($cpu.read_u16($mem))),
+        true => Instruction(Opcode::$instr, Value::Immediate8($cpu.read_u8_pc($mem))),
+        false => Instruction(Opcode::$instr, Value::Immediate16($cpu.read_u16_pc($mem))),
+    })
+}
+
+macro_rules! immediate_x {
+    ($instr:ident, $cpu:ident, $mem:ident) => (match $cpu.p_reg.contains(FLAG_X) {
+        true => Instruction(Opcode::$instr, Value::Immediate8($cpu.read_u8_pc($mem))),
+        false => Instruction(Opcode::$instr, Value::Immediate16($cpu.read_u16_pc($mem))),
     })
 }
 
 macro_rules! immediate8 {
-    ($instr:ident, $cpu:ident, $mem:ident) => (Instruction(Opcode::$instr, Value::Immediate8($cpu.read_u8($mem))))
+    ($instr:ident, $cpu:ident, $mem:ident) => (Instruction(Opcode::$instr, Value::Immediate8($cpu.read_u8_pc($mem))))
 }
 
 macro_rules! direct_page {
-    ($instr:ident, $cpu:ident, $mem:ident) => (Instruction(Opcode::$instr, Value::DirectPage($cpu.read_u8($mem))))
+    ($instr:ident, $cpu:ident, $mem:ident) => (Instruction(Opcode::$instr, Value::DirectPage($cpu.read_u8_pc($mem))))
 }
 
 #[derive(Debug)]
@@ -51,8 +58,10 @@ pub enum Opcode {
     SEI,        // 0x78
     STA,        // 0x85 0x8D
     STZ,        // 0x9C
+    LDY,        // 0xA0
     LDA,        // 0xA9
     REP,        // 0xC2
+    CMP,        // 0xCD
     SEP,        // 0xE2
     XCE,        // 0xFB
     Unknown(u8), 
@@ -62,7 +71,7 @@ pub struct Instruction(pub Opcode, pub Value);
 
 impl Instruction {
     pub fn from(cpu: &mut Ricoh5A22, mem: &Memory) -> Instruction {
-        match cpu.read_u8(mem) {
+        match cpu.read_u8_pc(mem) {
             0x08 => implied!(PHP),                                  // 0x08 PHP
             0x18 => implied!(CLC),                                  // 0x18 CLC
             0x1B => implied!(TCS),                                  // 0x1B TCS/TAS
@@ -72,8 +81,10 @@ impl Instruction {
             0x85 => direct_page!(STA, cpu, mem),                    // 0x85 STA dp
             0x8D => absolute!(STA, cpu, mem),                       // 0x8D STA addr
             0x9C => absolute!(STZ, cpu, mem),                       // 0x9C STZ addr
+            0xA0 => immediate_m!(LDY, cpu, mem),                    // 0xA0 LDY #const
             0xA9 => immediate_m!(LDA, cpu, mem),                    // 0xA9 LDA #const
             0xC2 => immediate8!(REP, cpu, mem),                     // 0xC2 REP #const
+            0xCD => absolute!(CMP, cpu, mem),                       // 0xCD CMP addr
             0xE2 => immediate8!(SEP, cpu, mem),                     // 0xE2 SEP #const
             0xFB => implied!(XCE),                                  // 0xFB XCE
             op => Instruction(Opcode::Unknown(op), Value::Implied),

@@ -56,7 +56,25 @@ fn main() {
         match line.trim() {
             "q" => break,
             "r" => snes.reset(),
-            "s" => snes.step(),
+            "s" => {
+                match snes.step() {
+                    Ok(cycles) => { },
+                    Err(err) => {
+                        println!("{}", err);
+                        println!("{:?}", Ricoh5A22::from(snes.clone()));
+                    }
+                }
+            }
+            "g" => {
+                while match snes.step() {
+                    Ok(cycles) => { true },
+                    Err(err) => {
+                        println!("{}", err);
+                        println!("{:?}", Ricoh5A22::from(snes.clone()));
+                        false
+                    }
+                } { }
+            }
             "c" => println!("{:?}", Ricoh5A22::from(snes.clone())),
             "h" => println!("{:?}", SnesHeader::from(SnesCart::from(snes.clone()))),
             _ => print!("Unknown command: {}", line)

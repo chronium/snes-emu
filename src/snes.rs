@@ -10,8 +10,6 @@ pub struct SNES {
     pub cart: SnesCart,
     pub cpu: Ricoh5A22,
     pub mem: Memory,
-    steps: u64,
-    cycles: u64,
 }
 
 impl SNES {
@@ -24,8 +22,6 @@ impl SNES {
             cart: cart,
             cpu: cpu,
             mem: mem,
-            steps: 0,
-            cycles: 0,
         }
     }
 
@@ -34,10 +30,8 @@ impl SNES {
         self.cpu.reset(&self.cart);
     }
 
-    pub fn step(&mut self) {
-        self.steps += 1;
-        self.cycles += self.cpu.step(&mut self.mem);
-        println!("Step: {} Cycles ran: {}", self.steps, self.cycles);
+    pub fn step(&mut self) -> Result<u8, String> {
+        self.cpu.step(&mut self.mem)
     }
 }
 

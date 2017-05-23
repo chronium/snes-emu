@@ -28,6 +28,7 @@ pub struct Ricoh5A22 {
     inidisp: u8,
     fastrom: bool,
     a_reg: u16,
+    y_reg: u16,
     direct_page: u16,
     stack_ptr: u16,
     pbr: u8,
@@ -57,6 +58,10 @@ impl Ricoh5A22 {
         // We're in slow ROM territory
         self.fastrom = false;
 
+        // Set initial register states
+        self.a_reg = 0u16;
+        self.y_reg = 0u16;
+
         // Set the Direct Page to the Zero Page
         // Emulation mode uses Zero Page here
         self.direct_page = 0u16;
@@ -71,14 +76,14 @@ impl Ricoh5A22 {
         println!("CPU Reset, PC: ${:X}", self.pc);
     }
 
-    pub fn step(&mut self, mem: &mut Memory) -> u64 {
+    pub fn step(&mut self, mem: &mut Memory) -> Result<u8, String> {
         print!("0x{:4X}: ", self.pc);
         match Instruction::from(self, mem) {
             Instruction(Opcode::SEI, _) => {
                 println!("SEI");
                 // Disable interrupts
                 self.p_reg.insert(FLAG_I);
-                2
+                Ok(2)
             }
             Instruction(Opcode::STZ, Value::Absolute(addr)) => {
                 println!("STZ ${:X}", addr);
@@ -88,12 +93,12 @@ impl Ricoh5A22 {
                     // If 16 bit accumulator write two bytes
                     false => {
                         self.write_u16(mem, addr, 0u16);
-                        5
+                        Ok(5)
                     }
                     // If 8 bit accumulator write one byte
                     true => {
                         self.write_u8(mem, addr, 0u8);
-                        4
+                        Ok(4)
                     }
                 }
             }
@@ -101,7 +106,7 @@ impl Ricoh5A22 {
                 println!("CLC");
                 // Clear Carry Flag
                 self.p_reg.remove(FLAG_C);
-                2
+                Ok(2)
             }
             Instruction(Opcode::XCE, _) => {
                 print!("XCE ");
@@ -126,7 +131,7 @@ impl Ricoh5A22 {
                         println!("Enter emulation mode");
                     }
                 }
-                2
+                Ok(2)
             }
             Instruction(Opcode::LDA, Value::Immediate8(val)) => {
                 println!("LDA #${:X}", val);
@@ -134,7 +139,7 @@ impl Ricoh5A22 {
                 // The A register is the low byte of the 16 bit
                 // Whole register. The high byte is B and As whole
                 // The register is C, C is 16 bit (B << 8) & A
-                self.a_reg = val as u16;
+                self.a_reg = (0xFF00 & self.a_reg) | val as u16;
 
                 // Set the Zero flag
                 if self.a_reg == 0 {
@@ -149,7 +154,7 @@ impl Ricoh5A22 {
                 } else {
                     self.p_reg.remove(FLAG_N);
                 }
-                2
+                Ok(2)
             }
             Instruction(Opcode::LDA, Value::Immediate16(val)) => {
                 println!("LDA #${:X}", val);
@@ -165,26 +170,26 @@ impl Ricoh5A22 {
                 }
 
                 // Set the N flag to the most significant bit
-                if self.a_reg & 0x80 == 0x80 {
+                if self.a_reg & 0x8000 == 0x8000 {
                     self.p_reg.insert(FLAG_N);
                 } else {
                     self.p_reg.remove(FLAG_N);
                 }
-                3
+                Ok(3)
             }
             Instruction(Opcode::REP, Value::Immediate8(flags)) => {
                 println!("REP #${:X}", flags);
                 // Reset the Processor register bits
                 // Based on the immediate
                 self.p_reg.bits &= !flags;
-                3
+                Ok(3)
             }
             Instruction(Opcode::SEP, Value::Immediate8(flags)) => {
                 println!("SEP #${:X}", flags);
                 // Set the Processor register bits
                 // To the immediate value 
                 self.p_reg.bits |= flags;
-                3
+                Ok(3)
             }
             Instruction(Opcode::STA, Value::Absolute(addr)) => {
                 println!("STA ${:X}", addr);
@@ -196,12 +201,12 @@ impl Ricoh5A22 {
                     // If 16 bit accumulator write the C register
                     false => {
                         self.write_u16(mem, addr, a);
-                        5
+                        Ok(5)
                     }
                     // If 8 bit accumulator write the A register
                     true => {
                         self.write_u8(mem, addr + 0, (a & 0xFF) as u8);
-                        4
+                        Ok(4)
                     }
                 }
             }
@@ -224,7 +229,7 @@ impl Ricoh5A22 {
                 } else {
                     self.p_reg.remove(FLAG_N);
                 }
-                2
+                Ok(2)
             }
             Instruction(Opcode::TCS, Value::Implied) => {
                 println!("TCS");
@@ -240,7 +245,7 @@ impl Ricoh5A22 {
                         self.stack_ptr = 0x1000 + (self.a_reg & 0xFF);
                     }
                 }
-                2
+                Ok(2)
             }
             Instruction(Opcode::JSR, Value::Absolute(addr)) => {
                 println!("JSR ${:X}", addr);
@@ -257,7 +262,7 @@ impl Ricoh5A22 {
                 // Jump!
                 self.pc = addr;
 
-                6
+                Ok(6)
             }
             Instruction(Opcode::STA, Value::DirectPage(offset)) => {
                 println!("STA ${}", offset);
@@ -290,7 +295,7 @@ impl Ricoh5A22 {
                 // Direct Page Zero
                 cycles += if dp & 0xFF != 0x00 { 1 } else { 0 };
 
-                cycles
+                Ok(cycles)
             }
             Instruction(Opcode::PHP, Value::Implied) => {
                 println!("PHP");
@@ -301,26 +306,110 @@ impl Ricoh5A22 {
                 // Push the Processor register
                 self.push_u8(mem, p.bits as u8);
 
-                3
+                Ok(3)
+            }
+            Instruction(Opcode::LDY, Value::Immediate16(val)) => {
+                println!("LDY #${}", val);
+
+                // Load a 16 bit immediate into the Y register
+                self.y_reg = val;
+
+                // Set the Zero flag
+                if self.y_reg == 0 {
+                    self.p_reg.insert(FLAG_Z);
+                } else {
+                    self.p_reg.remove(FLAG_Z);
+                }
+
+                // Set the N flag to the most significant bit
+                if self.y_reg & 0x8000 == 0x8000 {
+                    self.p_reg.insert(FLAG_N);
+                } else {
+                    self.p_reg.remove(FLAG_N);
+                }
+                Ok(3)
+            }
+            Instruction(Opcode::CMP, Value::Absolute(addr)) => {
+                println!("CMP ${:X}", addr);
+
+                match self.p_reg.contains(FLAG_M) {
+                    true => {
+                        let val = self.read_u8(mem, addr);
+                        let res = (self.a_reg & 0xFF) as u8 - val;
+
+                        if res == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        if (self.a_reg & 0xFF) as u8 >= val {
+                            self.p_reg.insert(FLAG_C);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        if res & 0x80 == 0x80 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+                    }
+                    false => {
+                        let val = self.read_u16(mem, addr);
+                        let res = self.a_reg - val;
+
+
+                        if res == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        if self.a_reg >= val {
+                            self.p_reg.insert(FLAG_C);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        if res & 0x8000 == 0x8000 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+                    }
+                }
+                Ok(4)
             }
             Instruction(Opcode::Unknown(op), _) => {
-                panic!("Unknown instruction: ${:X}", op);
+                Err(format!("Unknown instruction: ${:X}", op))
             }
             Instruction(op, val) => {
-                panic!("Instruction {:?}, val {:?} unimplemented", op, val);
+                Err(format!("Instruction {:?}, val {:?} unimplemented", op, val))
             }
             _ => unimplemented!()
         }
     }
 
-    pub fn read_u8(&mut self, mem: &Memory) -> u8 {
-        let val = mem.peek_u8(self.pc);
+    pub fn read_u8(&self, mem: &Memory, addr: u16) -> u8 {
+        match addr {
+            0x2140...0x2143 => 0u8,
+            _ => mem.peek_u8(addr)
+        }
+    }
+
+    pub fn read_u16(&self, mem: &Memory, addr: u16) -> u16 {
+        (self.read_u8(mem, addr) as u16) | ((self.read_u8(mem, addr) as u16) << 8)
+    }
+
+    pub fn read_u8_pc(&mut self, mem: &Memory) -> u8 {
+        let val = self.read_u8(mem, self.pc);
         self.pc = self.pc.wrapping_add(1);
         val
     }
 
-    pub fn read_u16(&mut self, mem: &Memory) -> u16 {
-        (self.read_u8(mem) as u16) | ((self.read_u8(mem) as u16) << 8)
+    pub fn read_u16_pc(&mut self, mem: &Memory) -> u16 {
+        (self.read_u8_pc(mem) as u16) | ((self.read_u8_pc(mem) as u16) << 8)
     }
 
     pub fn push_u8(&mut self, mem: &mut Memory, val: u8) {
