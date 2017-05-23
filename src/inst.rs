@@ -15,6 +15,7 @@ pub enum Value {
     AbsoluteY(u16),
     IndirectX(u8),
     IndirectOffY(u8),
+    DirectPage(u8),
 }
 
 macro_rules! implied {
@@ -36,13 +37,19 @@ macro_rules! immediate8 {
     ($instr:ident, $cpu:ident, $mem:ident) => (Instruction(Opcode::$instr, Value::Immediate8($cpu.read_u8($mem))))
 }
 
+macro_rules! direct_page {
+    ($instr:ident, $cpu:ident, $mem:ident) => (Instruction(Opcode::$instr, Value::DirectPage($cpu.read_u8($mem))))
+}
+
 #[derive(Debug)]
 pub enum Opcode {
+    PHP,        // 0x08
     CLC,        // 0x18
     TCS,        // 0x1B
+    JSR,        // 0x20
     TCD,        // 0x5B
     SEI,        // 0x78
-    STA,        // 0x8D
+    STA,        // 0x85 0x8D
     STZ,        // 0x9C
     LDA,        // 0xA9
     REP,        // 0xC2
@@ -56,10 +63,13 @@ pub struct Instruction(pub Opcode, pub Value);
 impl Instruction {
     pub fn from(cpu: &mut Ricoh5A22, mem: &Memory) -> Instruction {
         match cpu.read_u8(mem) {
+            0x08 => implied!(PHP),                                  // 0x08 PHP
             0x18 => implied!(CLC),                                  // 0x18 CLC
             0x1B => implied!(TCS),                                  // 0x1B TCS/TAS
-            0x5B => implied!(TCD),                                  // 0x18 TCD/TAD
+            0x20 => absolute!(JSR, cpu, mem),                       // 0x20 JSR addr
+            0x5B => implied!(TCD),                                  // 0x5B TCD/TAD
             0x78 => implied!(SEI),                                  // 0x78 SEI
+            0x85 => direct_page!(STA, cpu, mem),                    // 0x85 STA dp
             0x8D => absolute!(STA, cpu, mem),                       // 0x8D STA addr
             0x9C => absolute!(STZ, cpu, mem),                       // 0x9C STZ addr
             0xA9 => immediate_m!(LDA, cpu, mem),                    // 0xA9 LDA #const

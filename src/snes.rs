@@ -36,7 +36,7 @@ impl SNES {
 
     pub fn step(&mut self) {
         self.steps += 1;
-        self.cycles += self.cpu.step(&self.mem);
+        self.cycles += self.cpu.step(&mut self.mem);
         println!("Step: {} Cycles ran: {}", self.steps, self.cycles);
     }
 }

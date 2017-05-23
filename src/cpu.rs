@@ -28,7 +28,7 @@ pub struct Ricoh5A22 {
     inidisp: u8,
     fastrom: bool,
     a_reg: u16,
-    direct_page: u8,
+    direct_page: u16,
     stack_ptr: u16,
     pbr: u8,
 }
@@ -59,7 +59,7 @@ impl Ricoh5A22 {
 
         // Set the Direct Page to the Zero Page
         // Emulation mode uses Zero Page here
-        self.direct_page = 0u8;
+        self.direct_page = 0u16;
 
         // Set the Stack Pointer to the First Page
         // Emulation mode uses First page here
@@ -71,7 +71,7 @@ impl Ricoh5A22 {
         println!("CPU Reset, PC: ${:X}", self.pc);
     }
 
-    pub fn step(&mut self, mem: &Memory) -> u64 {
+    pub fn step(&mut self, mem: &mut Memory) -> u64 {
         print!("0x{:4X}: ", self.pc);
         match Instruction::from(self, mem) {
             Instruction(Opcode::SEI, _) => {
@@ -87,8 +87,7 @@ impl Ricoh5A22 {
                 match self.p_reg.contains(FLAG_M) {
                     // If 16 bit accumulator write two bytes
                     false => {
-                        self.write_u8(mem, addr, 0u8);
-                        self.write_u8(mem, addr+1, 0u8);
+                        self.write_u16(mem, addr, 0u16);
                         5
                     }
                     // If 8 bit accumulator write one byte
@@ -153,7 +152,7 @@ impl Ricoh5A22 {
                 2
             }
             Instruction(Opcode::LDA, Value::Immediate16(val)) => {
-                println!("LDC #${:X}", val);
+                println!("LDA #${:X}", val);
                 // Load a 16 bit immediate into the C register
                 // But for easy reference, I call it A
                 self.a_reg = val;
@@ -184,24 +183,23 @@ impl Ricoh5A22 {
                 println!("SEP #${:X}", flags);
                 // Set the Processor register bits
                 // To the immediate value 
-                self.p_reg.bits |= !flags;
+                self.p_reg.bits |= flags;
                 3
             }
             Instruction(Opcode::STA, Value::Absolute(addr)) => {
                 println!("STA ${:X}", addr);
+
+                let a = self.a_reg;
                 
                 // Store A at address
                 match self.p_reg.contains(FLAG_M) {
                     // If 16 bit accumulator write the C register
                     false => {
-                        let a = self.a_reg;
-                        self.write_u8(mem, addr + 0, (a & 0xFF) as u8);
-                        self.write_u8(mem, addr + 1, ((a & 0xFF00) >> 8) as u8);
+                        self.write_u16(mem, addr, a);
                         5
                     }
                     // If 8 bit accumulator write the A register
                     true => {
-                        let a = self.a_reg;
                         self.write_u8(mem, addr + 0, (a & 0xFF) as u8);
                         4
                     }
@@ -211,7 +209,7 @@ impl Ricoh5A22 {
                 println!("TCD");
 
                 // Transfer C register to the Direct Page register
-                self.direct_page = (self.a_reg & 0xFF) as u8;
+                self.direct_page = self.a_reg & 0xFF;
 
                 // Set the Zero flag
                 if self.direct_page == 0 {
@@ -221,7 +219,7 @@ impl Ricoh5A22 {
                 }
 
                 // Set the N flag to the most significant bit
-                if self.direct_page & 0x80 == 0x80 {
+                if self.direct_page & 0x8000 == 0x8000 {
                     self.p_reg.insert(FLAG_N);
                 } else {
                     self.p_reg.remove(FLAG_N);
@@ -244,6 +242,67 @@ impl Ricoh5A22 {
                 }
                 2
             }
+            Instruction(Opcode::JSR, Value::Absolute(addr)) => {
+                println!("JSR ${:X}", addr);
+
+                // Rust borrow vrap
+                let pbr = self.pbr;
+                let pc = self.pc;
+
+                // Store the Program Bank Register
+                self.push_u8(mem, pbr);
+                // Store the Program Counter
+                self.push_u16(mem, pc);
+
+                // Jump!
+                self.pc = addr;
+
+                6
+            }
+            Instruction(Opcode::STA, Value::DirectPage(offset)) => {
+                println!("STA ${}", offset);
+
+                // Store a temporary number of cycles
+                let mut cycles = 3;
+
+                // More Rust borrow crap
+                let p_reg = self.p_reg;
+                let dp = self.direct_page;
+                let a = self.a_reg;
+
+                match p_reg.contains(FLAG_M) {
+                    // If accumulator is 16 bit write C at
+                    // Direct Page + offset
+                    false => {
+                        self.write_u16(mem,dp + offset as u16, a);
+                        // Add one more cycle because we have
+                        // Written one more byte
+                        cycles += 1;
+                    }
+                    // If accumulator is 8 bit write A at
+                    // Direct Page + offset
+                    true => {
+                        self.write_u8(mem, dp + offset as u16, (a & 0xFF) as u8);
+                    }
+                }
+
+                // Add another cycle if we're not reading from
+                // Direct Page Zero
+                cycles += if dp & 0xFF != 0x00 { 1 } else { 0 };
+
+                cycles
+            }
+            Instruction(Opcode::PHP, Value::Implied) => {
+                println!("PHP");
+
+                // Even more Rust borrow crap
+                let p = self.p_reg;
+
+                // Push the Processor register
+                self.push_u8(mem, p.bits as u8);
+
+                3
+            }
             Instruction(Opcode::Unknown(op), _) => {
                 panic!("Unknown instruction: ${:X}", op);
             }
@@ -264,7 +323,17 @@ impl Ricoh5A22 {
         (self.read_u8(mem) as u16) | ((self.read_u8(mem) as u16) << 8)
     }
 
-    pub fn write_u8(&mut self, mem: &Memory, addr: u16, val: u8) {
+    pub fn push_u8(&mut self, mem: &mut Memory, val: u8) {
+        mem.write_u8(self.stack_ptr, val);
+        self.stack_ptr -= 1;
+    }
+
+    pub fn push_u16(&mut self, mem: &mut Memory, val: u16) {
+        self.push_u8(mem, ((val & 0xFF) >> 0) as u8);
+        self.push_u8(mem, ((val & 0xFF) >> 8) as u8);
+    }
+
+    pub fn write_u8(&mut self, mem: &mut Memory, addr: u16, val: u8) {
         match addr {
             0x2100 => {
                 println!("TODO: INIDISP #${:X}", val);
@@ -291,5 +360,10 @@ impl Ricoh5A22 {
             }
             _ => mem.write_u8(addr, val)
         }
+    }
+
+    pub fn write_u16(&mut self, mem: &mut Memory, addr: u16, val: u16) {
+        self.write_u8(mem, addr + 0, ((val & 0x00FF) >> 0) as u8);
+        self.write_u8(mem, addr + 1, ((val & 0xFF00) >> 8) as u8);
     }
 }

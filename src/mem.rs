@@ -1,14 +1,18 @@
 use cart::SnesCart;
 
+use std::cell::Cell;
+
 #[derive(Clone)]
 pub struct Memory {
     cart: SnesCart,
+    wram: Cell<[u8; 0x2000]>,
 }
 
 impl Memory {
     pub fn new(cart: SnesCart) -> Memory {
         Memory {
             cart: cart,
+            wram: Cell::new([0u8; 0x2000]),
         }
     }
 
@@ -20,9 +24,10 @@ impl Memory {
         }
     }
 
-    pub fn write_u8(&self, addr: u16, val: u8) {
+    pub fn write_u8(&mut self, addr: u16, val: u8) {
         let addr = addr as usize;
         match addr {
+            0x0000...0x1FFF => self.wram.get_mut()[addr] = val,
             _ => panic!("Unsupported memory write at: ${:X} with value: ${:X}", addr, val)
         }
     }
