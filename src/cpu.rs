@@ -4,6 +4,7 @@ use mem::Memory;
 use snes::SNES;
 
 bitflags! {
+    #[derive(Default)]
     pub flags PReg: u8 {
         const FLAG_C = 0b00000001,
         const FLAG_Z = 0b00000010,
@@ -16,7 +17,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Ricoh5A22 {
     pc: u16,
     pub p_reg: PReg,
@@ -27,34 +28,46 @@ pub struct Ricoh5A22 {
     inidisp: u8,
     fastrom: bool,
     a_reg: u16,
-    direct_page: u16,
+    direct_page: u8,
+    stack_ptr: u16,
+    pbr: u8,
 }
 
 impl Ricoh5A22 {
-    pub fn new() -> Ricoh5A22 {
-        Ricoh5A22 {
-            pc:          0u16,
-            p_reg:       PReg::empty(),
-            nmitimen:    0u8,
-            emulation:   true,
-            hdmaen:      0u8,
-            mdmaen:      0u8,
-            inidisp:     0u8,
-            fastrom:     false,
-            a_reg:       0u16,
-            direct_page: 0u16,
-        }
-    }
-
     pub fn reset(&mut self, cart: &SnesCart) {
+        // Reset the CPU
+        // Set the Program Counter to the Reset Vector
         self.pc = (cart[0x7FFC] as u16) | ((cart[0x7FFD] as u16) << 8);
+
+        // Set 8 bit accumulator mode
         self.p_reg.insert(FLAG_M);
+
+        // Set emulation mode
         self.emulation = true;
+
+        // Get rid of any HDMA
         self.hdmaen = 0u8;
+
+        // Get rid of any MDMA
         self.mdmaen = 0u8;
+
+        // Set the display off with 0 brightness
         self.inidisp = 0u8;
+
+        // We're in slow ROM territory
         self.fastrom = false;
-        self.direct_page = 0u16;
+
+        // Set the Direct Page to the Zero Page
+        // Emulation mode uses Zero Page here
+        self.direct_page = 0u8;
+
+        // Set the Stack Pointer to the First Page
+        // Emulation mode uses First page here
+        self.stack_ptr = 0x1000u16;
+
+        // Set the Program Bank Register
+        self.pbr = 0u8;
+
         println!("CPU Reset, PC: ${:X}", self.pc);
     }
 
@@ -179,14 +192,14 @@ impl Ricoh5A22 {
                 
                 // Store A at address
                 match self.p_reg.contains(FLAG_M) {
-                    // If we're in native mode, write the whole 16 bits
+                    // If 16 bit accumulator write the C register
                     false => {
                         let a = self.a_reg;
                         self.write_u8(mem, addr + 0, (a & 0xFF) as u8);
                         self.write_u8(mem, addr + 1, ((a & 0xFF00) >> 8) as u8);
                         5
                     }
-                    // If we're in emulation mode, just the low A byte
+                    // If 8 bit accumulator write the A register
                     true => {
                         let a = self.a_reg;
                         self.write_u8(mem, addr + 0, (a & 0xFF) as u8);
@@ -198,7 +211,7 @@ impl Ricoh5A22 {
                 println!("TCD");
 
                 // Transfer C register to the Direct Page register
-                self.direct_page = self.a_reg;
+                self.direct_page = (self.a_reg & 0xFF) as u8;
 
                 // Set the Zero flag
                 if self.direct_page == 0 {
@@ -208,12 +221,27 @@ impl Ricoh5A22 {
                 }
 
                 // Set the N flag to the most significant bit
-                if self.direct_page & 0x8000 == 0x8000 {
+                if self.direct_page & 0x80 == 0x80 {
                     self.p_reg.insert(FLAG_N);
                 } else {
                     self.p_reg.remove(FLAG_N);
                 }
+                2
+            }
+            Instruction(Opcode::TCS, Value::Implied) => {
+                println!("TCS");
 
+                match self.p_reg.contains(FLAG_M) {
+                    // If 16 bit accumulator write the C register
+                    false => {
+                        self.stack_ptr = self.a_reg;
+                    }
+                    // If 8 bit accumulator write the A register
+                    // And remain in page 1
+                    true => {
+                        self.stack_ptr = 0x1000 + (self.a_reg & 0xFF);
+                    }
+                }
                 2
             }
             Instruction(Opcode::Unknown(op), _) => {

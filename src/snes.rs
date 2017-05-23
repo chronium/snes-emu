@@ -17,7 +17,7 @@ pub struct SNES {
 impl SNES {
     pub fn new(rom: Vec<u8>) -> SNES {
         let cart = SnesCart::new(rom);
-        let cpu = Ricoh5A22::new();
+        let cpu = Default::default();
         let mem = Memory::new(cart.clone());
 
         SNES {
