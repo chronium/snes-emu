@@ -16,6 +16,8 @@ pub enum Value {
     IndirectX(u8),
     IndirectOffY(u8),
     DirectPage(u8),
+    DirectPageX(u8),
+    AbsoluteLong(u16, u8),
 }
 
 macro_rules! implied {
@@ -48,22 +50,36 @@ macro_rules! direct_page {
     ($instr:ident, $cpu:ident, $mem:ident) => (Instruction(Opcode::$instr, Value::DirectPage($cpu.read_u8_pc($mem))))
 }
 
+macro_rules! absolute_long {
+    ($instr:ident, $cpu:ident, $mem:ident) => (Instruction(Opcode::$instr, Value::AbsoluteLong($cpu.read_u16_pc($mem), $cpu.read_u8_pc($mem))))
+}
+
+macro_rules! direct_page_x {
+    ($instr:ident, $cpu:ident, $mem:ident) => (Instruction(Opcode::$instr, Value::DirectPageX($cpu.read_u8_pc($mem))))
+}
+
 #[derive(Debug)]
 pub enum Opcode {
-    PHP,        // 0x08
-    CLC,        // 0x18
-    TCS,        // 0x1B
-    JSR,        // 0x20
-    TCD,        // 0x5B
-    SEI,        // 0x78
-    STA,        // 0x85 0x8D
-    STZ,        // 0x9C
-    LDY,        // 0xA0
-    LDA,        // 0xA9
-    REP,        // 0xC2
-    CMP,        // 0xCD
-    SEP,        // 0xE2
-    XCE,        // 0xFB
+    PHP,        // 08
+    CLC,        //    18
+    TCS,        //    1B
+    JSR,        // 20     22
+    PHK,        // 4B
+    TCD,        // 5B
+    SEI,        // 78
+    STA,        // 85 8D
+    STX,        // 8E
+    TXS,        // 9A
+    STZ,        // 74 9C
+    LDY,        // A0
+    LDX,        //       A2 AE
+    LDA,        // A9
+    PLB,        // AB
+    REP,        //       C2
+    CMP,        // CD
+    SEP,        //       E2
+    INX,        // E8
+    XCE,        // FB
     Unknown(u8), 
 }
 
@@ -76,16 +92,25 @@ impl Instruction {
             0x18 => implied!(CLC),                                  // 0x18 CLC
             0x1B => implied!(TCS),                                  // 0x1B TCS/TAS
             0x20 => absolute!(JSR, cpu, mem),                       // 0x20 JSR addr
+            0x22 => absolute_long!(JSR, cpu, mem),                  // 0x22 JSR long
+            0x4B => implied!(PHK),                                  // 0x4B PHK
             0x5B => implied!(TCD),                                  // 0x5B TCD/TAD
+            0x74 => direct_page_x!(STZ, cpu, mem),                  // 0x74 STZ dp,X
             0x78 => implied!(SEI),                                  // 0x78 SEI
             0x85 => direct_page!(STA, cpu, mem),                    // 0x85 STA dp
             0x8D => absolute!(STA, cpu, mem),                       // 0x8D STA addr
+            0x8E => absolute!(STX, cpu, mem),                       // 0x8E STX addr
+            0x9A => implied!(TXS),                                  // 0x9A TXS
             0x9C => absolute!(STZ, cpu, mem),                       // 0x9C STZ addr
-            0xA0 => immediate_m!(LDY, cpu, mem),                    // 0xA0 LDY #const
+            0xA0 => immediate_x!(LDY, cpu, mem),                    // 0xA0 LDY #const
+            0xA2 => immediate_x!(LDX, cpu, mem),                    // 0xA2 LDX #const
             0xA9 => immediate_m!(LDA, cpu, mem),                    // 0xA9 LDA #const
+            0xAB => implied!(PLB),                                  // 0xAB PLB
+            0xAE => absolute!(LDX, cpu, mem),                       // 0xAE LDX addr
             0xC2 => immediate8!(REP, cpu, mem),                     // 0xC2 REP #const
             0xCD => absolute!(CMP, cpu, mem),                       // 0xCD CMP addr
             0xE2 => immediate8!(SEP, cpu, mem),                     // 0xE2 SEP #const
+            0xE8 => implied!(INX),                                  // 0xE8 INX
             0xFB => implied!(XCE),                                  // 0xFB XCE
             op => Instruction(Opcode::Unknown(op), Value::Implied),
         }

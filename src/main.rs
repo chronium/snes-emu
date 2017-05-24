@@ -71,6 +71,8 @@ fn main() {
                     Err(err) => {
                         println!("{}", err);
                         println!("{:?}", Ricoh5A22::from(snes.clone()));
+                        println!("Instructions ran: {}", snes.step);
+                        snes.step = 0;
                         false
                     }
                 } { }

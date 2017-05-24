@@ -10,6 +10,7 @@ pub struct SNES {
     pub cart: SnesCart,
     pub cpu: Ricoh5A22,
     pub mem: Memory,
+    pub step: u64,
 }
 
 impl SNES {
@@ -22,6 +23,7 @@ impl SNES {
             cart: cart,
             cpu: cpu,
             mem: mem,
+            step: 0u64,
         }
     }
 
@@ -31,6 +33,7 @@ impl SNES {
     }
 
     pub fn step(&mut self) -> Result<u8, String> {
+        self.step += 1;
         self.cpu.step(&mut self.mem)
     }
 }
