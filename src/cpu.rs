@@ -71,7 +71,7 @@ impl Ricoh5A22 {
 
         // Set the Stack Pointer to the First Page
         // Emulation mode uses First page here
-        self.stack_ptr = 0x1000u16;
+        self.stack_ptr = 0x01FFu16;
 
         // Set the Program Bank Register
         self.pbr = 0u8;
@@ -447,6 +447,27 @@ impl Ricoh5A22 {
                 }
                 Ok(3)
             }
+            Instruction(Opcode::LDX, Value::Immediate8(val)) => {
+                println!("LDX #${:X}", val);
+
+                // Load a 16 bit immediate into the X register
+                self.x_reg = (self.x_reg & 0xFF) | val as u16;
+
+                // Set the Zero flag
+                if self.x_reg == 0 {
+                    self.p_reg.insert(FLAG_Z);
+                } else {
+                    self.p_reg.remove(FLAG_Z);
+                }
+
+                // Set the N flag to the most significant bit
+                if self.x_reg & 0x80 == 0x80 {
+                    self.p_reg.insert(FLAG_N);
+                } else {
+                    self.p_reg.remove(FLAG_N);
+                }
+                Ok(3)
+            }
             Instruction(Opcode::TXS, Value::Implied) => {
                 println!("TXS");
 
@@ -502,6 +523,7 @@ impl Ricoh5A22 {
             Instruction(Opcode::PLB, Value::Implied) => {
                 println!("PLB");
 
+                // Pull Data Bank Register
                 self.dbr = self.pull_u8(mem);
 
                 // Set the Zero flag
@@ -576,7 +598,7 @@ impl Ricoh5A22 {
                 let x = self.x_reg;
                 
                 // Store X at address
-                match self.p_reg.contains(FLAG_M) {
+                match self.p_reg.contains(FLAG_X) {
                     // If Index registers are 8 bit
                     true => {
                         self.write_u8(mem, addr, (x & 0xFF) as u8);
@@ -664,6 +686,104 @@ impl Ricoh5A22 {
                 }
                 Ok(2)
             }
+            Instruction(Opcode::XBA, Value::Implied) => {
+                println!("XBA");
+
+                // Get the low and high bytes of the A register
+                let high = ((self.a_reg & 0xFF00) >> 8) as u8;
+                let low  = ((self.a_reg & 0x00FF) >> 0) as u8;
+
+                // Swap the bytes
+                self.a_reg = (high as u16) | ((low as u16) << 8);
+
+                // Set the Zero flag
+                if self.a_reg == 0 {
+                    self.p_reg.insert(FLAG_Z);
+                } else {
+                    self.p_reg.remove(FLAG_Z);
+                }
+
+                // Set the N flag to the most significant bit
+                if self.a_reg & 0x80 == 0x80 {
+                    self.p_reg.insert(FLAG_N);
+                } else {
+                    self.p_reg.remove(FLAG_N);
+                }
+
+                Ok(3)
+            }
+            Instruction(Opcode::PHA, Value::Implied) => {
+                println!("PHA");
+
+                let a = self.a_reg;
+
+                match self.p_reg.contains(FLAG_M) {
+                    // 8 bit Accumulator
+                    true => {
+                        // Push Accumulator
+                        self.push_u8(mem, (a & 0xFF) as u8);
+                        Ok(3)
+                    }
+                    // 16 bit Accumulator
+                    false => {
+                        // Push Accumulator
+                        self.push_u16(mem, a);
+                        Ok(4)
+                    }
+                }
+            }
+            Instruction(Opcode::PHX, Value::Implied) => {
+                println!("PHX");
+
+                let x = self.x_reg;
+
+                match self.p_reg.contains(FLAG_X) {
+                    // 8 bit Index registers
+                    true => {
+                        // Push X
+                        self.push_u8(mem, (x & 0xFF) as u8);
+                        Ok(3)
+                    }
+                    // 16 bit Index registers
+                    false => {
+                        // Push X
+                        self.push_u16(mem, x);
+                        Ok(4)
+                    }
+                }
+            }
+            Instruction(Opcode::PLD, Value::Implied) => {
+                println!("PLD");
+
+                // Pull Direct Page Register
+                self.direct_page = self.pull_u16(mem);
+
+                // Set the Zero flag
+                if self.direct_page == 0 {
+                    self.p_reg.insert(FLAG_Z);
+                } else {
+                    self.p_reg.remove(FLAG_Z);
+                }
+
+                // Set the N flag to the most significant bit
+                if self.direct_page & 0x8000 == 0x8000 {
+                    self.p_reg.insert(FLAG_N);
+                } else {
+                    self.p_reg.remove(FLAG_N);
+                }
+                Ok(5)
+            }
+            Instruction(Opcode::RTS, Value::Implied) => {
+                println!("RTS");
+
+                let addr = self.pull_u16(mem);
+                let pbr = self.pull_u8(mem);
+
+                self.pbr = pbr;
+                self.pc = addr;
+
+                Ok(6)
+            }
             Instruction(Opcode::Unknown(op), _) => {
                 Err(format!("Unknown instruction: ${:X}", op))
             }
@@ -718,12 +838,9 @@ impl Ricoh5A22 {
         // The Rust borrow checker?
         // Sorry, Rust borrow crap?
         // It's back here!
-        println!("sp: {:X}", self.stack_ptr);
         let high = self.pull_u8(mem) as u16;
-        println!("sp: {:X}", self.stack_ptr);
         let low = self.pull_u8(mem) as u16;
-        println!("sp: {:X}", self.stack_ptr);
-        low | (high << 8)
+        high | (low << 8)
     }
 
     pub fn write_u8(&mut self, mem: &mut Memory, addr: u16, val: u8) {
