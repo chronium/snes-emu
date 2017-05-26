@@ -167,6 +167,7 @@ impl Ricoh5A22 {
                 // Load a 16 bit immediate into the C register
                 // But for easy reference, I call it A
                 self.a_reg = val;
+                println!("a: {:X}, val: {:X}", self.a_reg, val);
 
                 // Set the Zero flag
                 if self.a_reg == 0 {
@@ -285,13 +286,10 @@ impl Ricoh5A22 {
                 println!("JSR ${:X}", addr);
 
                 // Rust borrow crap
-                let pbr = self.pbr;
                 let pc = self.pc;
 
-                // Store the Program Bank Register
-                self.push_u8(mem, pbr);
                 // Store the Program Counter
-                self.push_u16(mem, pc);
+                self.push_u16(mem, pc - 1);
 
                 // Jump!
                 self.pc = addr;
@@ -631,7 +629,7 @@ impl Ricoh5A22 {
                     // If accumulator is 8 bit write A at
                     // Direct Page + offset
                     true => {
-                        self.write_u8(mem, dp + ((x & 0xFF) as u16) + offset as u16, 0u8);
+                        self.write_u8(mem, dp + x + offset as u16, 0u8);
                     }
                 }
 
@@ -776,13 +774,246 @@ impl Ricoh5A22 {
             Instruction(Opcode::RTS, Value::Implied) => {
                 println!("RTS");
 
+                // Pull the address
                 let addr = self.pull_u16(mem);
+                // Pull the Program Bank Register
                 let pbr = self.pull_u8(mem);
 
+                // Return
                 self.pbr = pbr;
                 self.pc = addr;
 
                 Ok(6)
+            }
+            Instruction(Opcode::CPX, Value::Immediate8(val)) => {
+                println!("CPX #${:X}", val);
+
+                match self.p_reg.contains(FLAG_X) {
+                    // If 8 bit Index registers
+                    true => {
+                        // Compare
+                        let res = ((self.x_reg & 0xFF) as u8) - val;
+
+                        // Set the Zero flag
+                        if res == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the Carry flag
+                        if (self.x_reg & 0xFF) as u8 >= val {
+                            self.p_reg.insert(FLAG_C);
+                        } else {
+                            self.p_reg.remove(FLAG_C);
+                        }
+
+                        // Set the N flag
+                        if res & 0x80 == 0x80 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+                        Ok(2)
+                    }
+                    // If 16 bit Index registers
+                    false => {
+                        // Compare
+                        let res = self.x_reg - val as u16;
+
+                        // Set the Zero flag
+                        if res == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the Carry flag
+                        if self.x_reg >= val as u16 {
+                            self.p_reg.insert(FLAG_C);
+                        } else {
+                            self.p_reg.remove(FLAG_C);
+                        }
+
+                        // Set the N flag
+                        if res & 0x8000 == 0x8000 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+                        Ok(3)                        
+                    }
+                }
+            }
+            Instruction(Opcode::CPX, Value::Immediate16(val)) => {
+                println!("CPX #${:X}", val);
+
+                match self.p_reg.contains(FLAG_X) {
+                    // If 8 bit Index registers
+                    true => {
+                        // Compare
+                        let res = (self.x_reg & 0xFF).wrapping_sub(val);
+
+                        // Set the Zero flag
+                        if res == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the Carry flag
+                        if self.x_reg & 0xFF >= val {
+                            self.p_reg.insert(FLAG_C);
+                        } else {
+                            self.p_reg.remove(FLAG_C);
+                        }
+
+                        // Set the N flag
+                        if res & 0x80 == 0x80 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+                        Ok(2)
+                    }
+                    // If 16 bit Index registers
+                    false => {
+                        // Compare
+                        let res = self.x_reg.wrapping_sub(val);
+
+                        // Set the Zero flag
+                        if res == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the Carry flag
+                        if self.x_reg >= val {
+                            self.p_reg.insert(FLAG_C);
+                        } else {
+                            self.p_reg.remove(FLAG_C);
+                        }
+
+                        // Set the N flag
+                        if res & 0x8000 == 0x8000 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+                        Ok(3)                        
+                    }
+                }
+            }
+            Instruction(Opcode::BNE, Value::Immediate8(near)) => {
+                println!("BNE ${:X}", near);
+
+                let mut cycles = 2;
+
+                // If not Zero
+                if !self.p_reg.contains(FLAG_Z) {
+                    let pc = self.pc as i32;
+                    // Branch relative
+                    self.pc = (pc + (near as i8) as i32) as u16;
+                    cycles += 1;
+                }
+
+                cycles += if self.emulation { 1 } else { 0 };
+                Ok(cycles)
+            }
+            Instruction(Opcode::LDA, Value::Absolute(addr)) => {
+                println!("LDA ${:X}", addr);
+
+                match self.p_reg.contains(FLAG_M) {
+                    // 8 bit Accumulator
+                    true => {
+                        // Read value from memory
+                        let val = self.read_u8(mem, addr);
+
+                        // Set A register
+                        self.a_reg = (self.a_reg & 0xFF00) | val as u16;
+
+                        // Set the Zero flag
+                        if self.a_reg == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the N flag to the most significant bit
+                        if self.a_reg & 0x80 == 0x80 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+
+                        Ok(4)
+                    }
+                    // 16 bit Accumulator
+                    false => {
+                        let val = self.read_u16(mem, addr);
+
+                        //Set A register
+                        self.a_reg = val;
+
+                        // Set the Zero flag
+                        if self.a_reg == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the N flag to the most significant bit
+                        if self.a_reg & 0x8000 == 0x8000 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+
+                        Ok(5)
+                    }
+                }
+            }
+            Instruction(Opcode::STX, Value::DirectPage(offset)) => {
+                println!("STX ${:X}", offset);
+
+                // Store a temporary number of cycles
+                let mut cycles = 3;
+
+                // More Rust borrow crap
+                let p_reg = self.p_reg;
+                let dp = self.direct_page;
+                let x = self.x_reg;
+
+                match p_reg.contains(FLAG_X) {
+                    // 8 bit Index registers
+                    // Direct Page + offset
+                    false => {
+                        self.write_u16(mem,dp + offset as u16, x);
+                        // Add one more cycle because we have
+                        // Written one more byte
+                        cycles += 1;
+                    }
+                    // 16 bit Index registers
+                    // Direct Page + offset
+                    true => {
+                        self.write_u8(mem, dp + offset as u16, (x & 0xFF) as u8);
+                    }
+                }
+
+                // Add another cycle if we're not reading from
+                // Direct Page Zero
+                cycles += if dp & 0xFF != 0x00 { 1 } else { 0 };
+
+                Ok(cycles)
+            }
+            Instruction(Opcode::PLP, Value::Implied) => {
+                println!("PLP");
+
+                // Pull the Processor register from the stack
+                self.p_reg = PReg::from_bits(self.pull_u8(mem)).unwrap();
+
+                Ok(4)
             }
             Instruction(Opcode::Unknown(op), _) => {
                 Err(format!("Unknown instruction: ${:X}", op))
@@ -797,6 +1028,7 @@ impl Ricoh5A22 {
     pub fn read_u8(&self, mem: &Memory, addr: u16) -> u8 {
         match addr {
             0x2000 => 0u8,
+            0x4210 => 0x42u8,
             0x2140...0x2143 => 0u8,
             _ => mem.peek_u8(addr)
         }
@@ -849,12 +1081,24 @@ impl Ricoh5A22 {
                 println!("TODO: INIDISP #${:X}", val);
                 self.inidisp = val;
             }
+            0x2101...0x2120 => {
+                println!("TODO: REGISTERS 0x2101...0x2120 ({:X})", addr);
+            }
+            0x2123...0x2133 => {
+                println!("TODO: REGISTERS 0x2123...0x2133 ({:X})", addr);
+            }
+            0x213E => {
+                println!("TODO: STAT77 ${:X}", addr);
+            }
             0x2140...0x2143 => {
                 println!("TODO: APUIO #${:X}", addr);
             }
             0x4200 => {
                 println!("NMITIMEN: #${:X}", val);
                 self.nmitimen = val;
+            }
+            0x4201 => {
+                println!("TODO: SLHV ${:X}", addr);
             }
             0x420B => {
                 println!("MDMAEN: #${:X}", val);
@@ -868,17 +1112,41 @@ impl Ricoh5A22 {
                 println!("MEMSEL: #${:X}", val);
                 self.fastrom = (val & 0b1) == 0b1;
             }
+            0x4300...0x4306 => {
+                println!("TODO: DMA ${:X}", addr);
+            }
+            0x4310...0x4316 => {
+                println!("TODO: DMA ${:X}", addr);
+            }
+            0x4320...0x4326 => {
+                println!("TODO: DMA ${:X}", addr);
+            }
+            0x4330...0x4336 => {
+                println!("TODO: DMA ${:X}", addr);
+            }
+            0x4340...0x4346 => {
+                println!("TODO: DMA ${:X}", addr);
+            }
+            0x4350...0x4356 => {
+                println!("TODO: DMA ${:X}", addr);
+            }
+            0x4360...0x4366 => {
+                println!("TODO: DMA ${:X}", addr);
+            }
+            0x4370...0x4376 => {
+                println!("TODO: DMA ${:X}", addr);
+            }
             0x4372 => {
-                println!("TODO: A1Bx - DMA Source Address #${:X}", addr);
+                println!("TODO: A1Bx - DMA Source Address ${:X}", addr);
             }
             0x4373 => {
-                println!("TODO: A1Bx - DMA Source Address #${:X}", addr);
+                println!("TODO: A1Bx - DMA Source Address ${:X}", addr);
             }
             0x4374 => {
-                println!("TODO: A1Bx - DMA Source Address #${:X}", addr);
+                println!("TODO: A1Bx - DMA Source Address ${:X}", addr);
             }
             0x4375 => {
-                println!("TODO: A1Bx - DMA Source Address #${:X}", addr);
+                println!("TODO: A1Bx - DMA Source Address ${:X}", addr);
             }
             _ => mem.write_u8(addr, val)
         }
@@ -887,5 +1155,9 @@ impl Ricoh5A22 {
     pub fn write_u16(&mut self, mem: &mut Memory, addr: u16, val: u16) {
         self.write_u8(mem, addr + 0, ((val & 0x00FF) >> 0) as u8);
         self.write_u8(mem, addr + 1, ((val & 0xFF00) >> 8) as u8);
+    }
+
+    pub fn stack_ptr(&self) -> u16 {
+        self.stack_ptr
     }
 }

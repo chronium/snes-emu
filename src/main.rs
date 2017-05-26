@@ -1,4 +1,5 @@
 #![feature(range_contains)]
+#![feature(inclusive_range_syntax)]
 
 #[macro_use]
 extern crate clap;
@@ -76,6 +77,16 @@ fn main() {
                         false
                     }
                 } { }
+            }
+            "p" => {
+                let cpu = Ricoh5A22::from(snes.clone());
+                print!("{:04X}: [", (cpu.stack_ptr() & 0xFFF0));
+                for i in (cpu.stack_ptr() & 0xFFF0)...((cpu.stack_ptr() & 0xFFF0) | 0xE) {
+                    print!("{:02X} ", cpu.read_u8(&snes.mem, i));
+                }
+                print!("{:02X}", cpu.read_u8(&snes.mem, ((cpu.stack_ptr() & 0xFFF0) | 0xF)));
+                println!("]");
+                println!(" {}{:04X}: ^", "   ".repeat((cpu.stack_ptr() & 0xF) as usize), cpu.stack_ptr());
             }
             "c" => println!("{:?}", Ricoh5A22::from(snes.clone())),
             "h" => println!("{:?}", SnesHeader::from(SnesCart::from(snes.clone()))),

@@ -60,29 +60,32 @@ macro_rules! direct_page_x {
 
 #[derive(Debug)]
 pub enum Opcode {
-    PHP,        // 08
-    CLC,        //    18
-    TCS,        //    1B
+    PHP,        //                         08
+    CLC,        //                         18
+    TCS,        // 1B
     JSR,        // 20     22
+    PLP,        //                         28
     PLD,        // 2B
-    PHA,        // 48
+    PHA,        //                         48
     PHK,        // 4B
     TCD,        // 5B
     RTS,        // 60
-    SEI,        // 78
-    STA,        // 85 8D
-    STX,        // 8E
+    SEI,        //                         78
+    STA,        //                85 8D
+    STX,        //                   86 8E
     TXS,        // 9A
-    STZ,        // 74 9C
+    STZ,        //             74 9C
     LDY,        // A0
     LDX,        //       A2 AE
-    LDA,        // A9
+    LDA,        // A9 AD
     PLB,        // AB
     REP,        //       C2
     CMP,        // CD
     SEP,        //       E2
+    BNE,        // D0
     PHX,        // DA
-    INX,        // E8
+    CPX,        // E0
+    INX,        //                         E8
     XBA,        // EB
     XCE,        // FB
     Unknown(u8), 
@@ -98,6 +101,7 @@ impl Instruction {
             0x1B => implied!(TCS),                                  // 0x1B TCS/TAS
             0x20 => absolute!(JSR, cpu, mem),                       // 0x20 JSR addr
             0x22 => absolute_long!(JSR, cpu, mem),                  // 0x22 JSR long
+            0x28 => implied!(PLP),                                  // 0x28 PLP
             0x2B => implied!(PLD),                                  // 0x2B PLD
             0x48 => implied!(PHA),                                  // 0x48 PHA
             0x4B => implied!(PHK),                                  // 0x4B PHK
@@ -106,6 +110,7 @@ impl Instruction {
             0x74 => direct_page_x!(STZ, cpu, mem),                  // 0x74 STZ dp,X
             0x78 => implied!(SEI),                                  // 0x78 SEI
             0x85 => direct_page!(STA, cpu, mem),                    // 0x85 STA dp
+            0x86 => direct_page!(STX, cpu, mem),                    // 0x86 STX dp
             0x8D => absolute!(STA, cpu, mem),                       // 0x8D STA addr
             0x8E => absolute!(STX, cpu, mem),                       // 0x8E STX addr
             0x9A => implied!(TXS),                                  // 0x9A TXS
@@ -114,10 +119,13 @@ impl Instruction {
             0xA2 => immediate_x!(LDX, cpu, mem),                    // 0xA2 LDX #const
             0xA9 => immediate_m!(LDA, cpu, mem),                    // 0xA9 LDA #const
             0xAB => implied!(PLB),                                  // 0xAB PLB
+            0xAD => absolute!(LDA, cpu, mem),                       // 0xAD LDA addr
             0xAE => absolute!(LDX, cpu, mem),                       // 0xAE LDX addr
             0xC2 => immediate8!(REP, cpu, mem),                     // 0xC2 REP #const
             0xCD => absolute!(CMP, cpu, mem),                       // 0xCD CMP addr
+            0xD0 => immediate8!(BNE, cpu, mem),                     // 0xD0 BNE near
             0xDA => implied!(PHX),                                  // 0xDA PHX
+            0xE0 => immediate_x!(CPX, cpu, mem),                    // 0xE0 CPX #const
             0xE2 => immediate8!(SEP, cpu, mem),                     // 0xE2 SEP #const
             0xE8 => implied!(INX),                                  // 0xE8 INX
             0xEB => implied!(XBA),                                  // 0xEB XBA
