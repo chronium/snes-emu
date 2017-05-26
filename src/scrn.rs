@@ -7,15 +7,14 @@ use minifb::{Key, Window, WindowOptions, Scale};
 
 pub mod Scrn {
     pub static mut SCREEN: Option<super::Screen> = None;
+    pub static mut PALETTE_INDEX: u16 = 0u16;
+    pub static mut PALETTE: [u8; 1024] = [0u8; 1024];
 }
 
 #[derive(Clone)]
 pub struct Screen {
     width: usize,
     height: usize,
-    pub pal_ind: Arc<Mutex<u8>>,
-    pub palette: Arc<Mutex<[u8; 1024]>>,
-    memory: Arc<Mutex<Vec<u32>>>,
 }
 
 #[inline]
@@ -32,11 +31,6 @@ pub fn get_color(color: u16) -> u32 {
 
 impl Screen {
     pub fn new_scaled(title: String, width: usize, height: usize, scale: Scale) -> Screen {
-        let mut buff = Arc::new(Mutex::new(vec![0u32; width * height]));
-        let mut buff_win = buff.clone();
-        let mut palette = Arc::new(Mutex::new([0u8; 1024]));
-        let mut palette_win = palette.clone();
-        
         thread::spawn(move || {
             let mut window = Window::new(&title, width, height, WindowOptions {
                 scale: scale.clone(),
@@ -45,24 +39,20 @@ impl Screen {
                 panic!("{}", e);
             });
 
-            while window.is_open() && !window.is_key_down(Key::Escape) {
-                let buff = &mut buff_win.lock().unwrap();
-                let palette = &palette_win.lock().unwrap();
+            let mut buff = vec![0; width * height];
 
+            while window.is_open() && !window.is_key_down(Key::Escape) {
                 for i in buff.iter_mut() {
-                    *i = get_color((palette[0] as u16) | (palette[1] as u16));
+                    *i = unsafe { get_color((Scrn::PALETTE[0] as u16) | (Scrn::PALETTE[1] as u16)) };
                 }
 
-                window.update_with_buffer(buff);
+                window.update_with_buffer(&buff);
             }
         });
 
         Screen {
             width: width,
             height: height,
-            pal_ind: Arc::new(Mutex::new(0u8)),
-            palette: palette,
-            memory: buff,
         }
     }
     pub fn new(title: String, width: usize, height: usize) -> Screen {

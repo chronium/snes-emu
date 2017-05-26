@@ -1254,24 +1254,14 @@ impl Ricoh5A22 {
             0x2121 => {
                 println!("CGADD: {:X}", val);
                 unsafe {
-                    let pal_ind = Scrn::SCREEN.clone().unwrap().pal_ind.clone();
-                    let ind = &mut pal_ind.lock().unwrap();
-                    **ind = val * 2;
+                    Scrn::PALETTE_INDEX = val as u16 * 2;
                 }
             }
             0x2122 => { 
                 println!("CGDATA: {:X}", val);
                 unsafe {
-                    let scrn = Scrn::SCREEN.clone().unwrap();
-                    let pal_ind = scrn.pal_ind.clone();
-                    let ind = &mut pal_ind.lock().unwrap();
-
-                    let pal = scrn.palette.clone();
-                    let palette = &mut pal.lock().unwrap();
-
-                    palette[**ind as usize] = val;
-
-                    **ind += 1;
+                    Scrn::PALETTE[Scrn::PALETTE_INDEX as usize] = val;
+                    Scrn::PALETTE_INDEX += 1;
                 }
             }
             0x2123...0x2133 => {
