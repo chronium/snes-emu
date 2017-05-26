@@ -1,7 +1,10 @@
 use inst::{Instruction, Opcode, Value};
+use scrn::{Screen, Scrn};
 use cart::SnesCart;
 use mem::Memory;
 use snes::SNES;
+
+use std::cell::Cell;
 
 bitflags! {
     #[derive(Default)]
@@ -19,7 +22,7 @@ bitflags! {
 
 #[derive(Debug, Clone, Default)]
 pub struct Ricoh5A22 {
-    pc: u16,
+    pub pc: u16,
     pub p_reg: PReg,
     nmitimen: u8,
     emulation: bool,
@@ -34,6 +37,7 @@ pub struct Ricoh5A22 {
     stack_ptr: u16,
     pbr: u8,
     dbr: u8,
+    DMA7: [u8; 7],
 }
 
 impl Ricoh5A22 {
@@ -229,7 +233,7 @@ impl Ricoh5A22 {
                         self.write_u8(mem, addr, (a & 0xFF) as u8);
 
                         // Set the Zero flag
-                        if a == 0 {
+                        if (a & 0xFF) == 0 {
                             self.p_reg.insert(FLAG_Z);
                         } else {
                             self.p_reg.remove(FLAG_Z);
@@ -289,7 +293,7 @@ impl Ricoh5A22 {
                 let pc = self.pc;
 
                 // Store the Program Counter
-                self.push_u16(mem, pc - 1);
+                self.push_u16(mem, pc);
 
                 // Jump!
                 self.pc = addr;
@@ -448,8 +452,8 @@ impl Ricoh5A22 {
             Instruction(Opcode::LDX, Value::Immediate8(val)) => {
                 println!("LDX #${:X}", val);
 
-                // Load a 16 bit immediate into the X register
-                self.x_reg = (self.x_reg & 0xFF) | val as u16;
+                // Load a 8 bit immediate into the X register
+                self.x_reg = (self.x_reg & 0xFF00) | val as u16;
 
                 // Set the Zero flag
                 if self.x_reg == 0 {
@@ -776,11 +780,8 @@ impl Ricoh5A22 {
 
                 // Pull the address
                 let addr = self.pull_u16(mem);
-                // Pull the Program Bank Register
-                let pbr = self.pull_u8(mem);
 
                 // Return
-                self.pbr = pbr;
                 self.pc = addr;
 
                 Ok(6)
@@ -1015,6 +1016,164 @@ impl Ricoh5A22 {
 
                 Ok(4)
             }
+            Instruction(Opcode::PLX, Value::Implied) => {
+                println!("PLX");
+
+                match self.p_reg.contains(FLAG_X) {
+                    // 8 bit Index registers
+                    true => {
+                        // Pull the value
+                        let val = self.pull_u8(mem);
+
+                        // Set low X to the value pulled
+                        self.x_reg = (self.x_reg & 0xFF00) | val as u16;
+
+                        // Set the Zero flag
+                        if self.x_reg == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the N flag to the most significant bit
+                        if self.x_reg & 0x80 == 0x80 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+
+                        Ok(4)
+                    }
+                    // 16 bit Index registers
+                    false => {
+                        // Pull the value
+                        let val = self.pull_u16(mem);
+
+                        // Set A to the value pulled
+                        self.x_reg = val;
+
+                        // Set the Zero flag
+                        if self.x_reg == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the N flag to the most significant bit
+                        if self.x_reg & 0x8000 == 0x8000 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+
+                        Ok(5)
+                    }
+                }
+            }
+            Instruction(Opcode::PLA, Value::Implied) => {
+                println!("PLA");
+
+                match self.p_reg.contains(FLAG_M) {
+                    // 8 bit Accumulator
+                    true => {
+                        // Pull the value
+                        let val = self.pull_u8(mem);
+
+                        // Set low X to the value pulled
+                        self.a_reg = (self.a_reg & 0xFF00) | val as u16;
+
+                        // Set the Zero flag
+                        if self.a_reg == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the N flag to the most significant bit
+                        if self.a_reg & 0x80 == 0x80 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+
+                        Ok(4)
+                    }
+                    // 16 bit Accumulator
+                    false => {
+                        // Pull the value
+                        let val = self.pull_u16(mem);
+
+                        // Set A to the value pulled
+                        self.a_reg = val;
+
+                        // Set the Zero flag
+                        if self.a_reg == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the N flag to the most significant bit
+                        if self.a_reg & 0x8000 == 0x8000 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+
+                        Ok(5)
+                    }
+                }
+            }
+            Instruction(Opcode::DEX, Value::Implied) => {
+                println!("DEX");
+
+                match self.p_reg.contains(FLAG_X) {
+                    // For 8 bit Index registers
+                    true => {
+                        self.x_reg -= 1;
+
+                        // Set the Zero flag
+                        if self.x_reg == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the N flag to the most significant bit
+                        if self.x_reg & 0x80 == 0x80 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+                    }
+                    // For 16 bit Index registers
+                    false => {
+                        self.x_reg -= 1;
+
+                        // Set the Zero flag
+                        if self.x_reg == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the N flag to the most significant bit
+                        if self.x_reg & 0x8000 == 0x8000 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+                    }
+                }
+                Ok(2)
+            }
+            Instruction(Opcode::CLI, Value::Implied) => {
+                println!("CLI");
+
+                self.p_reg.remove(FLAG_I);
+
+                Ok(2)
+            }
             Instruction(Opcode::Unknown(op), _) => {
                 Err(format!("Unknown instruction: ${:X}", op))
             }
@@ -1030,6 +1189,14 @@ impl Ricoh5A22 {
             0x2000 => 0u8,
             0x4210 => 0x42u8,
             0x2140...0x2143 => 0u8,
+            0x4300...0x4306 => 0u8,
+            0x4310...0x4316 => 0u8,
+            0x4320...0x4326 => 0u8,
+            0x4330...0x4336 => 0u8,
+            0x4340...0x4346 => 0u8,
+            0x4350...0x4356 => 0u8,
+            0x4360...0x4366 => 0u8,
+            0x4370...0x4376 => self.DMA7[(addr - 0x4370) as usize],
             _ => mem.peek_u8(addr)
         }
     }
@@ -1084,11 +1251,37 @@ impl Ricoh5A22 {
             0x2101...0x2120 => {
                 println!("TODO: REGISTERS 0x2101...0x2120 ({:X})", addr);
             }
+            0x2121 => {
+                println!("CGADD: {:X}", val);
+                unsafe {
+                    let pal_ind = Scrn::SCREEN.clone().unwrap().pal_ind.clone();
+                    let ind = &mut pal_ind.lock().unwrap();
+                    **ind = val * 2;
+                }
+            }
+            0x2122 => { 
+                println!("CGDATA: {:X}", val);
+                unsafe {
+                    let scrn = Scrn::SCREEN.clone().unwrap();
+                    let pal_ind = scrn.pal_ind.clone();
+                    let ind = &mut pal_ind.lock().unwrap();
+
+                    let pal = scrn.palette.clone();
+                    let palette = &mut pal.lock().unwrap();
+
+                    palette[**ind as usize] = val;
+
+                    **ind += 1;
+                }
+            }
             0x2123...0x2133 => {
                 println!("TODO: REGISTERS 0x2123...0x2133 ({:X})", addr);
             }
             0x213E => {
                 println!("TODO: STAT77 ${:X}", addr);
+            }
+            0x2181...0x2183 => {
+                println!("TODO: REGISTERS 0x2181...0x2183 ({:X}", addr);
             }
             0x2140...0x2143 => {
                 println!("TODO: APUIO #${:X}", addr);
@@ -1133,9 +1326,7 @@ impl Ricoh5A22 {
             0x4360...0x4366 => {
                 println!("TODO: DMA ${:X}", addr);
             }
-            0x4370...0x4376 => {
-                println!("TODO: DMA ${:X}", addr);
-            }
+            0x4370...0x4376 => self.DMA7[(addr - 0x4370) as usize] = val,
             0x4372 => {
                 println!("TODO: A1Bx - DMA Source Address ${:X}", addr);
             }

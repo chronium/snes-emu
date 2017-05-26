@@ -1,6 +1,7 @@
+use cart::{SnesCart, SnesHeader};
 use inst::Instruction;
-use cart::SnesCart;
 use cpu::Ricoh5A22;
+use scrn::{Screen, Scrn};
 use mem::Memory;
 
 use std::cell::RefMut;
@@ -18,6 +19,14 @@ impl SNES {
         let cart = SnesCart::new(rom);
         let cpu = Default::default();
         let mem = Memory::new(cart.clone());
+
+        let hdr = SnesHeader::from(cart.clone());
+
+        let screen = Screen::new(hdr.game_title, 256,224);
+
+        unsafe {
+            Scrn::SCREEN = Some(screen);
+        }
 
         SNES {
             cart: cart,

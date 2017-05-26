@@ -2,7 +2,7 @@ use std::ops::Index;
 
 #[derive(Debug, Clone)]
 pub struct SnesHeader {
-    game_title: String,
+    pub game_title: String,
     makeup_byte: u8,
     rom_type: u8,
     rom_size: usize,

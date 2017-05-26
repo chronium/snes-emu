@@ -1,10 +1,15 @@
-#![feature(range_contains)]
 #![feature(inclusive_range_syntax)]
+#![feature(drop_types_in_const)]
+#![feature(integer_atomics)]
+#![feature(range_contains)]
+#![feature(box_syntax)]
 
 #[macro_use]
-extern crate clap;
-#[macro_use]
 extern crate bitflags;
+#[macro_use]
+extern crate clap;
+
+extern crate minifb;
 
 use std::io::{self, Read, BufRead, Write};
 use std::fs::File;
@@ -12,6 +17,7 @@ use std::fs::File;
 mod cart;
 mod snes;
 mod inst;
+mod scrn;
 mod cpu;
 mod mem;
 
@@ -47,6 +53,9 @@ fn main() {
     println!("Done");
 
     let stdin = io::stdin();
+
+    let mut bp = Vec::<u16>::new();
+
     loop {
         print!(">> ");
         io::stdout().flush().expect("Error flushing stdout");
@@ -67,16 +76,19 @@ fn main() {
                 }
             }
             "g" => {
-                while match snes.step() {
-                    Ok(cycles) => { true },
-                    Err(err) => {
-                        println!("{}", err);
-                        println!("{:?}", Ricoh5A22::from(snes.clone()));
-                        println!("Instructions ran: {}", snes.step);
-                        snes.step = 0;
-                        false
-                    }
-                } { }
+                while !bp.contains(&snes.cpu.pc) {
+                    match snes.step() {
+                        Ok(cycles) => { },
+                        Err(err) => {
+                            println!("{}", err);
+                            println!("{:?}", Ricoh5A22::from(snes.clone()));
+                            println!("Instructions ran: {}", snes.step);
+                            snes.step = 0;
+                            break
+                        }
+                    } 
+                }
+                println!("Breakpoint");
             }
             "p" => {
                 let cpu = Ricoh5A22::from(snes.clone());
@@ -90,7 +102,16 @@ fn main() {
             }
             "c" => println!("{:?}", Ricoh5A22::from(snes.clone())),
             "h" => println!("{:?}", SnesHeader::from(SnesCart::from(snes.clone()))),
-            _ => print!("Unknown command: {}", line)
+            _ => {
+                let split: Vec<&str> = line.trim().split(' ').collect();
+                match split[0] {
+                    "b" => {
+                        bp.push(u16::from_str_radix(split[1], 16).unwrap());
+                        println!("Breakpoint set at: {}", split[1]);
+                    }
+                    _ => print!("Unknown command: {}", line)
+                }
+            }
         }
     }
 }
