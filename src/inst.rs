@@ -68,10 +68,12 @@ pub enum Opcode {
     PLD,        //                                  2B
     PHA,        //                         48
     PHK,        //                                  4B
+    JMP,        //                                     4C
     CLI,        //                         58
     TCD,        //                                  5B
     RTS,        // 60
     PLA,        //                         68
+    RTL,        //                                  6B
     SEI,        //                         78
     STA,        //                85                      8D
     STX,        //                   86                      8E
@@ -109,10 +111,12 @@ impl Instruction {
             0x2B => implied!(PLD),                                  // 0x2B PLD
             0x48 => implied!(PHA),                                  // 0x48 PHA
             0x4B => implied!(PHK),                                  // 0x4B PHK
+            0x4C => absolute!(JMP, cpu, mem),                       // 0x4C JMP addr
             0x58 => implied!(CLI),                                  // 0x58 CLI
             0x5B => implied!(TCD),                                  // 0x5B TCD/TAD
             0x60 => implied!(RTS),                                  // 0x60 RTS
             0x68 => implied!(PLA),                                  // 0x68 PLA
+            0x6B => implied!(RTL),                                  // 0x6B RTL
             0x74 => direct_page_x!(STZ, cpu, mem),                  // 0x74 STZ dp,X
             0x78 => implied!(SEI),                                  // 0x78 SEI
             0x85 => direct_page!(STA, cpu, mem),                    // 0x85 STA dp

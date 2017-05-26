@@ -501,7 +501,7 @@ impl Ricoh5A22 {
                 // Store the Program Bank Register
                 self.push_u8(mem, pbr);
                 // Store the Program Counter
-                self.push_u16(mem, pc - 1);
+                self.push_u16(mem, pc);
                  
                 // Jump!
                 self.pc = addr;
@@ -1170,9 +1170,32 @@ impl Ricoh5A22 {
             Instruction(Opcode::CLI, Value::Implied) => {
                 println!("CLI");
 
+                // Clear Interrupt disable flag
                 self.p_reg.remove(FLAG_I);
 
                 Ok(2)
+            }
+            Instruction(Opcode::RTL, Value::Implied) => {
+                println!("RTL");
+
+                // Pop return address
+                let addr = self.pull_u16(mem);
+                // Pop return Program Bank
+                let pbr = self.pull_u8(mem);
+
+                // Perform return
+                self.pc = addr;
+                self.pbr = pbr;
+
+                Ok(6)
+            }
+            Instruction(Opcode::JMP, Value::Absolute(addr)) => {
+                println!("JMP ${:04X}", addr);
+
+                // Jump!
+                self.pc = addr;
+
+                Ok(3)
             }
             Instruction(Opcode::Unknown(op), _) => {
                 Err(format!("Unknown instruction: ${:X}", op))

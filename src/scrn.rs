@@ -22,11 +22,11 @@ pub fn get_color(color: u16) -> u32 {
     let r = color & 0b000000000011111;
     let g = color & 0b000001111100000;
     let b = color & 0b111110000000000;
-    let R = r + r / 32;
-    let G = g + g / 32;
-    let B = b + b / 32;
+    let R = (r * 255) / 31;
+    let G = (g * 255) / 31;
+    let B = (b * 255) / 31;
 
-    ((b as u32) << 16) | ((g as u32) << 8) | ((r as u32) << 0)
+    ((R as u32) << 16) | ((G as u32) << 8) | ((B as u32) << 0) | 0xFF000000
 }
 
 impl Screen {
