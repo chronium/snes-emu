@@ -9,6 +9,7 @@ pub mod Scrn {
     pub static mut SCREEN: Option<super::Screen> = None;
     pub static mut PALETTE_INDEX: u16 = 0u16;
     pub static mut PALETTE: [u8; 1024] = [0u8; 1024];
+    pub static mut RUNNING: bool = false;
 }
 
 #[derive(Clone)]
@@ -31,6 +32,9 @@ pub fn get_color(color: u16) -> u32 {
 
 impl Screen {
     pub fn new_scaled(title: String, width: usize, height: usize, scale: Scale) -> Screen {
+
+        unsafe { Scrn::RUNNING = true; }
+
         thread::spawn(move || {
             let mut window = Window::new(&title, width, height, WindowOptions {
                 scale: scale.clone(),
@@ -48,6 +52,8 @@ impl Screen {
 
                 window.update_with_buffer(&buff);
             }
+
+            unsafe { Scrn::RUNNING = false; }
         });
 
         Screen {

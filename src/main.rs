@@ -24,6 +24,7 @@ mod mem;
 use cart::{SnesCart, SnesHeader};
 use snes::SNES;
 use cpu::Ricoh5A22;
+use scrn::Scrn;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 const AUTHORS: &'static str = env!("CARGO_PKG_AUTHORS");
@@ -76,7 +77,7 @@ fn main() {
                 }
             }
             "g" => {
-                while !bp.contains(&snes.cpu.pc) {
+                while !bp.contains(&snes.cpu.pc) && unsafe { Scrn::RUNNING } {
                     match snes.step() {
                         Ok(cycles) => { },
                         Err(err) => {
