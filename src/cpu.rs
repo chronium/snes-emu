@@ -20,6 +20,149 @@ bitflags! {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum DMATransferMode {
+    RW,     // 1 register write once
+    RRW,    // 2 registers write once
+    RWW,    // 1 register write twice
+    RRWW,   // 2 registers write twice each 
+    RRRRW,  // 4 registers write once
+    RWRW,   // 2 registers write twice alternate
+}
+
+impl Default for DMATransferMode {
+    fn default() -> DMATransferMode {
+        DMATransferMode::RW
+    }
+}
+
+impl From<u8> for DMATransferMode {
+    fn from(val: u8) -> DMATransferMode {
+        match val & 0b111 {
+            0b000 => DMATransferMode::RW,
+            0b001 => DMATransferMode::RRW,
+            0b010 => DMATransferMode::RWW,
+            0b011 => DMATransferMode::RRWW,
+            0b100 => DMATransferMode::RRRRW,
+            0b101 => DMATransferMode::RWRW,
+            0b110 => DMATransferMode::RRW,
+            0b111 => DMATransferMode::RRWW,
+            _ => panic!("WTF!")
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum DMADirection {
+    To,
+    From,
+}
+
+impl Default for DMADirection {
+    fn default() -> DMADirection {
+        DMADirection::To
+    }
+}
+
+impl From<u8> for DMADirection {
+    fn from(val: u8) -> DMADirection {
+        match val & 0b10000000 {
+            0b10000000 => DMADirection::From,
+            _ => DMADirection::To,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum DMATransfer {
+    Adjusted,
+    Fixed,
+}
+
+impl Default for DMATransfer {
+    fn default() -> DMATransfer {
+        DMATransfer::Adjusted
+    }
+}
+
+impl From<u8> for DMATransfer {
+    fn from(val: u8) -> DMATransfer {
+        match val & 0b00001000 {
+            0b00001000 => DMATransfer::Fixed,
+            _ => DMATransfer::Adjusted,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum DMAIncrement {
+    Increment,
+    Decrement,
+}
+
+impl Default for DMAIncrement {
+    fn default() -> DMAIncrement {
+        DMAIncrement::Increment
+    }
+}
+
+impl From<u8> for DMAIncrement {
+    fn from(val: u8) -> DMAIncrement {
+        match val & 0b00010000 {
+            0b00010000 => DMAIncrement::Decrement,
+            _ => DMAIncrement::Increment,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum HDMAAddressing {
+    Direct,
+    Indirect,
+}
+
+impl Default for HDMAAddressing {
+    fn default() -> HDMAAddressing {
+        HDMAAddressing::Direct
+    }
+}
+
+impl From<u8> for HDMAAddressing {
+    fn from(val: u8) -> HDMAAddressing {
+        match val & 0b01000000 {
+            0b01000000 => HDMAAddressing::Indirect,
+            _ => HDMAAddressing::Direct,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct DMAControl {
+    transfer: DMATransfer,
+    increment: DMAIncrement,
+    hdma_mode: HDMAAddressing,
+    direction: DMADirection,
+    mode: DMATransferMode,
+}
+
+impl From<u8> for DMAControl {
+    fn from(val: u8) -> Self {
+        let mode = DMATransferMode::from(val);
+        let direction = DMADirection::from(val);
+        let transfer = DMATransfer::from(val);
+        let increment = DMAIncrement::from(val);
+        let addressing = HDMAAddressing::from(val);
+
+        Self {
+            transfer: transfer,
+            increment: increment,
+            hdma_mode: addressing,
+            direction: direction,
+            mode: mode,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Ricoh5A22 {
     pub pc: u16,
@@ -38,6 +181,11 @@ pub struct Ricoh5A22 {
     pbr: u8,
     dbr: u8,
     DMA7: [u8; 7],
+    DMA_addr: [u16; 7],
+    DMA_size: [u16; 7],
+    DMA_bank: [u8; 7],
+    DMA_dest: [u8; 7],
+    DMAP: [DMAControl; 7],
 }
 
 impl Ricoh5A22 {
@@ -152,14 +300,14 @@ impl Ricoh5A22 {
                 self.a_reg = (0xFF00 & self.a_reg) | val as u16;
 
                 // Set the Zero flag
-                if self.a_reg == 0 {
+                if val == 0 {
                     self.p_reg.insert(FLAG_Z);
                 } else {
                     self.p_reg.remove(FLAG_Z);
                 }
 
                 // Set the N flag to the most significant bit
-                if self.a_reg & 0x80 == 0x80 {
+                if val & 0x80 == 0x80 {
                     self.p_reg.insert(FLAG_N);
                 } else {
                     self.p_reg.remove(FLAG_N);
@@ -171,7 +319,6 @@ impl Ricoh5A22 {
                 // Load a 16 bit immediate into the C register
                 // But for easy reference, I call it A
                 self.a_reg = val;
-                println!("a: {:X}, val: {:X}", self.a_reg, val);
 
                 // Set the Zero flag
                 if self.a_reg == 0 {
@@ -253,7 +400,7 @@ impl Ricoh5A22 {
                 println!("TCD");
 
                 // Transfer C register to the Direct Page register
-                self.direct_page = self.a_reg & 0xFF;
+                self.direct_page = self.a_reg;
 
                 // Set the Zero flag
                 if self.direct_page == 0 {
@@ -377,7 +524,7 @@ impl Ricoh5A22 {
                         let res = (self.a_reg & 0xFF) as u8 - val;
 
                         // Set the Zero flag
-                        if res == 0 {
+                        if (res & 0xFF) == 0 {
                             self.p_reg.insert(FLAG_Z);
                         } else {
                             self.p_reg.remove(FLAG_Z);
@@ -456,14 +603,14 @@ impl Ricoh5A22 {
                 self.x_reg = (self.x_reg & 0xFF00) | val as u16;
 
                 // Set the Zero flag
-                if self.x_reg == 0 {
+                if val == 0 {
                     self.p_reg.insert(FLAG_Z);
                 } else {
                     self.p_reg.remove(FLAG_Z);
                 }
 
                 // Set the N flag to the most significant bit
-                if self.x_reg & 0x80 == 0x80 {
+                if val & 0x80 == 0x80 {
                     self.p_reg.insert(FLAG_N);
                 } else {
                     self.p_reg.remove(FLAG_N);
@@ -555,14 +702,14 @@ impl Ricoh5A22 {
                         self.x_reg = (self.x_reg & 0xFF00) | val as u16;
 
                         // Set the Zero flag
-                        if self.x_reg == 0 {
+                        if val == 0 {
                             self.p_reg.insert(FLAG_Z);
                         } else {
                             self.p_reg.remove(FLAG_Z);
                         }
 
                         // Set the N flag to the most significant bit
-                        if self.x_reg & 0x80 == 0x80 {
+                        if val & 0x80 == 0x80 {
                             self.p_reg.insert(FLAG_N);
                         } else {
                             self.p_reg.remove(FLAG_N);
@@ -604,11 +751,41 @@ impl Ricoh5A22 {
                     // If Index registers are 8 bit
                     true => {
                         self.write_u8(mem, addr, (x & 0xFF) as u8);
+
+                        // Set the Zero flag
+                        if (x & 0xFF) == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the N flag to the most significant bit
+                        if self.x_reg & 0x80 == 0x80 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+
                         Ok(5)
                     }
                     // If Index registers are 16 bit
                     false => {
                         self.write_u16(mem, addr, x);
+
+                        // Set the Zero flag
+                        if self.x_reg == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the N flag to the most significant bit
+                        if self.x_reg & 0x80 == 0x80 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+
                         Ok(4)
                     }
                 }
@@ -654,7 +831,7 @@ impl Ricoh5A22 {
                         self.x_reg += 1;
 
                         // Set the Zero flag
-                        if self.x_reg == 0 {
+                        if (self.x_reg & 0xFF) == 0 {
                             self.p_reg.insert(FLAG_Z);
                         } else {
                             self.p_reg.remove(FLAG_Z);
@@ -699,7 +876,7 @@ impl Ricoh5A22 {
                 self.a_reg = (high as u16) | ((low as u16) << 8);
 
                 // Set the Zero flag
-                if self.a_reg == 0 {
+                if (self.a_reg & 0xFF) == 0 {
                     self.p_reg.insert(FLAG_Z);
                 } else {
                     self.p_reg.remove(FLAG_Z);
@@ -796,7 +973,7 @@ impl Ricoh5A22 {
                         let res = ((self.x_reg & 0xFF) as u8) - val;
 
                         // Set the Zero flag
-                        if res == 0 {
+                        if (res & 0xFF) == 0 {
                             self.p_reg.insert(FLAG_Z);
                         } else {
                             self.p_reg.remove(FLAG_Z);
@@ -856,7 +1033,7 @@ impl Ricoh5A22 {
                         let res = (self.x_reg & 0xFF).wrapping_sub(val);
 
                         // Set the Zero flag
-                        if res == 0 {
+                        if (res & 0xFF) == 0 {
                             self.p_reg.insert(FLAG_Z);
                         } else {
                             self.p_reg.remove(FLAG_Z);
@@ -935,7 +1112,7 @@ impl Ricoh5A22 {
                         self.a_reg = (self.a_reg & 0xFF00) | val as u16;
 
                         // Set the Zero flag
-                        if self.a_reg == 0 {
+                        if (self.a_reg & 0xFF) == 0 {
                             self.p_reg.insert(FLAG_Z);
                         } else {
                             self.p_reg.remove(FLAG_Z);
@@ -991,6 +1168,21 @@ impl Ricoh5A22 {
                     // Direct Page + offset
                     false => {
                         self.write_u16(mem,dp + offset as u16, x);
+
+                        // Set the Zero flag
+                        if x == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the N flag to the most significant bit
+                        if x & 0x8000 == 0x8000 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+
                         // Add one more cycle because we have
                         // Written one more byte
                         cycles += 1;
@@ -999,6 +1191,20 @@ impl Ricoh5A22 {
                     // Direct Page + offset
                     true => {
                         self.write_u8(mem, dp + offset as u16, (x & 0xFF) as u8);
+
+                        // Set the Zero flag
+                        if (x & 0xFF) == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the N flag to the most significant bit
+                        if x & 0x80 == 0x80 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
                     }
                 }
 
@@ -1029,7 +1235,7 @@ impl Ricoh5A22 {
                         self.x_reg = (self.x_reg & 0xFF00) | val as u16;
 
                         // Set the Zero flag
-                        if self.x_reg == 0 {
+                        if (self.x_reg & 0xFF) == 0 {
                             self.p_reg.insert(FLAG_Z);
                         } else {
                             self.p_reg.remove(FLAG_Z);
@@ -1083,7 +1289,7 @@ impl Ricoh5A22 {
                         self.a_reg = (self.a_reg & 0xFF00) | val as u16;
 
                         // Set the Zero flag
-                        if self.a_reg == 0 {
+                        if (self.a_reg & 0xFF) == 0 {
                             self.p_reg.insert(FLAG_Z);
                         } else {
                             self.p_reg.remove(FLAG_Z);
@@ -1133,7 +1339,7 @@ impl Ricoh5A22 {
                         self.x_reg -= 1;
 
                         // Set the Zero flag
-                        if self.x_reg == 0 {
+                        if (self.x_reg & 0xFF) == 0 {
                             self.p_reg.insert(FLAG_Z);
                         } else {
                             self.p_reg.remove(FLAG_Z);
@@ -1271,7 +1477,13 @@ impl Ricoh5A22 {
                 println!("TODO: INIDISP #${:X}", val);
                 self.inidisp = val;
             }
-            0x2101...0x2120 => {
+            0x2101...0x2117 => {
+                println!("TODO: REGISTERS 0x2101...0x2120 ({:X})", addr);
+            }
+            0x2118...0x2119 => {
+                // TODO: VRAM
+            }
+            0x2119..0x2121 => {
                 println!("TODO: REGISTERS 0x2101...0x2120 ({:X})", addr);
             }
             0x2121 => {
@@ -1299,6 +1511,9 @@ impl Ricoh5A22 {
             0x2140...0x2143 => {
                 println!("TODO: APUIO #${:X}", addr);
             }
+            0x2180 => {
+                // TODO: WRAM
+            }
             0x4200 => {
                 println!("NMITIMEN: #${:X}", val);
                 self.nmitimen = val;
@@ -1308,10 +1523,56 @@ impl Ricoh5A22 {
             }
             0x420B => {
                 println!("MDMAEN: #${:X}", val);
+                if val & 0b0000001 == 0b0000001 {
+                    let control = self.DMAP[0];
+
+                    for i in 0...self.DMA_size[0] {
+                        match control.direction {
+                            DMADirection::To => {
+                                match control.mode {
+                                    DMATransferMode::RRW => {
+                                        let desta = 0x2100 | self.DMA_dest[0] as u16;
+                                        let destb = if desta + 1 > 0x21FF { 0x2100 } else { desta + 1 };
+                                        let addr = self.DMA_addr[0];
+                                        let a = self.read_u8(mem, addr);
+                                        let b = self.read_u8(mem, addr + 1);
+                                        self.write_u8(mem, desta, a);
+                                        self.write_u8(mem, destb, b);
+
+                                        match control.transfer {
+                                            DMATransfer::Fixed => { }
+                                            DMATransfer::Adjusted => {
+                                                self.DMA_addr[0] += 2;
+                                            }
+                                        }
+                                    }
+                                    DMATransferMode::RW => {
+                                        let dest = 0x2100 | self.DMA_dest[0] as u16;
+                                        let a = self.read_u8(mem, self.DMA_addr[0]);
+                                        self.write_u8(mem, dest, a);
+
+                                        match control.transfer {
+                                            DMATransfer::Fixed => { }
+                                            DMATransfer::Adjusted => {
+                                                self.DMA_addr[0] += 1;
+                                            }
+                                        }
+                                    }
+                                    _ => panic!("Unsupported DMA mode: {:?}", control)
+                                }
+                            }
+                            _ => panic!("Unsupported DMA mode: {:?}", control)
+                        }
+                    }
+
+                }
                 self.mdmaen = val;
             }
             0x420C => {
                 println!("HDMAEN: #${:X}", val);
+                if val != 0 {
+                    panic!("HDMAEN: #${:X}", val);
+                }
                 self.hdmaen = val;
             }
             0x420D => {
@@ -1319,7 +1580,36 @@ impl Ricoh5A22 {
                 self.fastrom = (val & 0b1) == 0b1;
             }
             0x4300...0x4306 => {
-                println!("TODO: DMA ${:X}", addr);
+                match addr & 0xF {
+                    0 => {
+                        self.DMAP[0] = DMAControl::from(val);
+                    }
+                    1 => {
+                        println!("BBAD0: {:X}", val);
+                        self.DMA_dest[0] = val;
+                    }
+                    2 => {
+                        println!("A1T0L: {:X}", val);
+                        self.DMA_addr[0] = (self.DMA_addr[0] & 0xFF00) | val as u16;
+                    }
+                    3 => {
+                        println!("A1T0H: {:X}", val);
+                        self.DMA_addr[0] = (self.DMA_addr[0] & 0x00FF) | ((val as u16) << 8);
+                    }
+                    4 => {
+                        println!("T1B0: {:X}", val);
+                        self.DMA_bank[0] = val;
+                    }
+                    5 => {
+                        println!("DAS0L: {:X}", val);
+                        self.DMA_size[0] = (self.DMA_size[0] & 0xFF00) | val as u16;
+                    }
+                    6 => {
+                        println!("DAS0H: {:X}", val);
+                        self.DMA_size[0] = (self.DMA_size[0] & 0x00FF) | ((val as u16) << 8);
+                    }
+                    _ => panic!("DMA: {:X}", addr & 0xF)
+                }
             }
             0x4310...0x4316 => {
                 println!("TODO: DMA ${:X}", addr);

@@ -12,7 +12,7 @@ impl Memory {
     pub fn new(cart: SnesCart) -> Memory {
         Memory {
             cart: cart,
-            wram: Cell::new([0u8; 0x2000]),
+            wram: Cell::new([0x55u8; 0x2000]),
         }
     }
 

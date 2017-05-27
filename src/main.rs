@@ -1,3 +1,4 @@
+#![feature(exclusive_range_pattern)]
 #![feature(inclusive_range_syntax)]
 #![feature(drop_types_in_const)]
 #![feature(integer_atomics)]
@@ -109,6 +110,16 @@ fn main() {
                     "b" => {
                         bp.push(u16::from_str_radix(split[1], 16).unwrap());
                         println!("Breakpoint set at: {}", split[1]);
+                    }
+                    "m" => {
+                        let addr = u16::from_str_radix(split[1], 16).unwrap();
+                        let cpu = Ricoh5A22::from(snes.clone());
+                        print!("{:04X}: [", (addr & 0xFFF0));
+                        for i in (addr & 0xFFF0)...((addr & 0xFFF0) | 0xE) {
+                            print!("{:02X} ", cpu.read_u8(&snes.mem, i));
+                        }
+                        print!("{:02X}", cpu.read_u8(&snes.mem, ((addr & 0xFFF0) | 0xF)));
+                        println!("]");
                     }
                     _ => print!("Unknown command: {}", line)
                 }
