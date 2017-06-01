@@ -1,7 +1,10 @@
 use std::sync::atomic::{AtomicU8};
 use std::sync::{Mutex, Arc};
 use std::cell::{Cell, UnsafeCell};
+use std::time::Duration;
 use std::thread;
+
+use clock_ticks;
 
 use minifb::{Key, Window, WindowOptions, Scale};
 
@@ -10,6 +13,15 @@ pub mod Scrn {
     pub static mut PALETTE_INDEX: u16 = 0u16;
     pub static mut PALETTE: [u8; 1024] = [0u8; 1024];
     pub static mut RUNNING: bool = false;
+    pub static mut VRAM: [u16; 0x10000] = [0u16; 0x10000];
+    pub static mut VRAM_ADDR: u16 = 0u16;
+}
+
+#[allow(dead_code)]
+#[derive(PartialEq)]
+pub enum State {
+    Continue,
+    Stop,
 }
 
 #[derive(Clone)]
@@ -27,7 +39,32 @@ pub fn get_color(color: u16) -> u32 {
     let G = (g * 255) / 31;
     let B = (b * 255) / 31;
 
-    ((R as u32) << 16) | ((G as u32) << 8) | ((B as u32) << 0) | 0xFF000000
+    (((R as u32) << 16) & 0xFF0000) | (((G as u32) << 8) & 0x00FF00) | (((B as u32) << 0 )& 0x0000FF) | 0xFF000000
+}
+
+pub fn draw_loop<F>(rate: u64, mut callback: F) where 
+    F: FnMut() -> State {
+    let mut accumulator = 0;
+    let mut previous_clock = clock_ticks::precise_time_ns();
+
+    let rate = 1_000_000_000 / rate;
+
+    loop {
+        match callback() {
+            State::Stop => break,
+            State::Continue => (),
+        };
+
+        let now = clock_ticks::precise_time_ns();
+        accumulator += now - previous_clock;
+        previous_clock = now;
+
+        while accumulator >= rate {
+            accumulator -= rate;
+        }
+
+        thread::sleep(Duration::from_millis(((rate - accumulator) / 1000000) as u64));
+    }
 }
 
 impl Screen {
@@ -35,25 +72,31 @@ impl Screen {
 
         unsafe { Scrn::RUNNING = true; }
 
-        thread::spawn(move || {
-            let mut window = Window::new(&title, width, height, WindowOptions {
-                scale: scale.clone(),
-                ..Default::default()
-            }).unwrap_or_else(|e| {
-                panic!("{}", e);
-            });
 
-            let mut buff = vec![0; width * height];
+        let mut window = Window::new(&title, width, height, WindowOptions {
+            scale: scale.clone(),
+            ..Default::default()
+        }).unwrap_or_else(|e| {
+            panic!("{}", e);
+        });
 
-            while window.is_open() && !window.is_key_down(Key::Escape) {
+        let buffer = Arc::new(Mutex::new(vec![0u32; width * height]));
+
+        draw_loop(60, || {
+            if window.is_open() && !window.is_key_down(Key::Escape) {
+                let buff = &mut buffer.lock().unwrap();
                 for i in buff.iter_mut() {
-                    *i = unsafe { get_color((Scrn::PALETTE[0] as u16) | (Scrn::PALETTE[1] as u16)) };
+                    *i = unsafe { get_color((Scrn::PALETTE[0] as u16) | ((Scrn::PALETTE[1] as u16) << 8)) };
                 }
 
                 window.update_with_buffer(&buff);
-            }
 
-            unsafe { Scrn::RUNNING = false; }
+                State::Continue
+            } else {
+                unsafe { Scrn::RUNNING = false; }
+
+                State::Stop
+            }
         });
 
         Screen {

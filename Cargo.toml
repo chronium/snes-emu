@@ -7,3 +7,4 @@ authors = ["Chronium onlivechronium@gmail.com"]
 clap = "2.19"
 bitflags = "*"
 minifb = "*"
+clock_ticks = "*"

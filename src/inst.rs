@@ -62,6 +62,7 @@ macro_rules! direct_page_x {
 pub enum Opcode {
     PHP,        //                         08
     CLC,        //                         18
+    INA,        //                            1A
     TCS,        //                                  1B
     JSR,        // 20     22
     PLP,        //                         28
@@ -104,6 +105,7 @@ impl Instruction {
         match cpu.read_u8_pc(mem) {
             0x08 => implied!(PHP),                                  // 0x08 PHP
             0x18 => implied!(CLC),                                  // 0x18 CLC
+            0x1A => implied!(INA),                                  // 0x1A INA
             0x1B => implied!(TCS),                                  // 0x1B TCS/TAS
             0x20 => absolute!(JSR, cpu, mem),                       // 0x20 JSR addr
             0x22 => absolute_long!(JSR, cpu, mem),                  // 0x22 JSR long

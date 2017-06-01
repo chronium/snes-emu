@@ -16,11 +16,11 @@ impl Memory {
         }
     }
 
-    pub fn peek_u8(&self, addr: u16) -> u8 {
+    pub fn peek_u8(&self, addr: u16, bank: u8) -> u8 {
         let addr = addr as usize;
         match addr {
             0x0000...0x1FFF => self.wram.get()[addr],
-            0x8000...0xFFFF => self.cart[addr - 0x8000],
+            0x8000...0xFFFF => self.cart[(addr - 0x8000) + bank as usize * 0x8000],
             _ => panic!("Unsupported memory read at: ${:X}", addr)
         }
     }
