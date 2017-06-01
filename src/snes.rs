@@ -22,12 +22,6 @@ impl SNES {
 
         let hdr = SnesHeader::from(cart.clone());
 
-        let screen = Screen::new(hdr.game_title, 256,224);
-
-        unsafe {
-            Scrn::SCREEN = Some(screen);
-        }
-
         SNES {
             cart: cart,
             cpu: cpu,

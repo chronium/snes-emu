@@ -1,8 +1,9 @@
 use inst::{Instruction, Opcode, Value};
 use scrn::{Screen, Scrn};
 use cart::SnesCart;
-use mem::Memory;
 use snes::SNES;
+use regs::*;
+use mem::Memory;
 
 use std::cell::Cell;
 
@@ -17,149 +18,6 @@ bitflags! {
         const FLAG_M = 0b00100000,
         const FLAG_V = 0b01000000,
         const FLAG_N = 0b10000000,
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum DMATransferMode {
-    RW,     // 1 register write once
-    RRW,    // 2 registers write once
-    RWW,    // 1 register write twice
-    RRWW,   // 2 registers write twice each 
-    RRRRW,  // 4 registers write once
-    RWRW,   // 2 registers write twice alternate
-}
-
-impl Default for DMATransferMode {
-    fn default() -> DMATransferMode {
-        DMATransferMode::RW
-    }
-}
-
-impl From<u8> for DMATransferMode {
-    fn from(val: u8) -> DMATransferMode {
-        match val & 0b111 {
-            0b000 => DMATransferMode::RW,
-            0b001 => DMATransferMode::RRW,
-            0b010 => DMATransferMode::RWW,
-            0b011 => DMATransferMode::RRWW,
-            0b100 => DMATransferMode::RRRRW,
-            0b101 => DMATransferMode::RWRW,
-            0b110 => DMATransferMode::RRW,
-            0b111 => DMATransferMode::RRWW,
-            _ => panic!("WTF!")
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum DMADirection {
-    To,
-    From,
-}
-
-impl Default for DMADirection {
-    fn default() -> DMADirection {
-        DMADirection::To
-    }
-}
-
-impl From<u8> for DMADirection {
-    fn from(val: u8) -> DMADirection {
-        match val & 0b10000000 {
-            0b10000000 => DMADirection::From,
-            _ => DMADirection::To,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum DMATransfer {
-    Adjusted,
-    Fixed,
-}
-
-impl Default for DMATransfer {
-    fn default() -> DMATransfer {
-        DMATransfer::Adjusted
-    }
-}
-
-impl From<u8> for DMATransfer {
-    fn from(val: u8) -> DMATransfer {
-        match val & 0b00001000 {
-            0b00001000 => DMATransfer::Fixed,
-            _ => DMATransfer::Adjusted,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum DMAIncrement {
-    Increment,
-    Decrement,
-}
-
-impl Default for DMAIncrement {
-    fn default() -> DMAIncrement {
-        DMAIncrement::Increment
-    }
-}
-
-impl From<u8> for DMAIncrement {
-    fn from(val: u8) -> DMAIncrement {
-        match val & 0b00010000 {
-            0b00010000 => DMAIncrement::Decrement,
-            _ => DMAIncrement::Increment,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum HDMAAddressing {
-    Direct,
-    Indirect,
-}
-
-impl Default for HDMAAddressing {
-    fn default() -> HDMAAddressing {
-        HDMAAddressing::Direct
-    }
-}
-
-impl From<u8> for HDMAAddressing {
-    fn from(val: u8) -> HDMAAddressing {
-        match val & 0b01000000 {
-            0b01000000 => HDMAAddressing::Indirect,
-            _ => HDMAAddressing::Direct,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-struct DMAControl {
-    transfer: DMATransfer,
-    increment: DMAIncrement,
-    hdma_mode: HDMAAddressing,
-    direction: DMADirection,
-    mode: DMATransferMode,
-}
-
-impl From<u8> for DMAControl {
-    fn from(val: u8) -> Self {
-        let mode = DMATransferMode::from(val);
-        let direction = DMADirection::from(val);
-        let transfer = DMATransfer::from(val);
-        let increment = DMAIncrement::from(val);
-        let addressing = HDMAAddressing::from(val);
-
-        Self {
-            transfer: transfer,
-            increment: increment,
-            hdma_mode: addressing,
-            direction: direction,
-            mode: mode,
-        }
     }
 }
 
@@ -186,6 +44,7 @@ pub struct Ricoh5A22 {
     DMA_bank: [u8; 7],
     DMA_dest: [u8; 7],
     DMAP: [DMAControl; 7],
+    VMAIN: VMAIN,
 }
 
 impl Ricoh5A22 {
@@ -230,6 +89,8 @@ impl Ricoh5A22 {
 
         // Set the Data Bank Register
         self.dbr = 0u8;
+
+        self.VMAIN = Default::default();
 
         println!("CPU Reset, PC: ${:X}", self.pc);
     }
@@ -519,7 +380,7 @@ impl Ricoh5A22 {
                     // If 8 bit accumulator
                     true => {
                         // Read value from memory
-                        let val = self.read_u8(mem, addr);
+                        let val = self.read_u8(mem, addr, self.dbr);
                         // Compare
                         let res = (self.a_reg & 0xFF) as u8 - val;
 
@@ -547,7 +408,7 @@ impl Ricoh5A22 {
                     // If 16 bit accumulator
                     false => {
                         // Read value from memory
-                        let val = self.read_u16(mem, addr);
+                        let val = self.read_u16(mem, addr, self.dbr);
                         // Compare
                         let res = self.a_reg - val;
 
@@ -697,7 +558,7 @@ impl Ricoh5A22 {
                     // If Index registers are 8 bit
                     true => {
                         // Read the value from memory
-                        let val = self.read_u8(mem, addr);
+                        let val = self.read_u8(mem, addr, self.dbr);
                         // Set X register to the value
                         self.x_reg = (self.x_reg & 0xFF00) | val as u16;
 
@@ -719,7 +580,7 @@ impl Ricoh5A22 {
                     // If Index registers are 16 bit
                     false => {
                         // Read the value from memory
-                        let val = self.read_u16(mem, addr);
+                        let val = self.read_u16(mem, addr, self.dbr);
                         // Set X register to value
                         self.x_reg = val;
 
@@ -828,7 +689,7 @@ impl Ricoh5A22 {
                 match self.p_reg.contains(FLAG_X) {
                     // For 8 bit Index registers
                     true => {
-                        self.x_reg += 1;
+                        self.x_reg = ((self.x_reg as u8).wrapping_add(1) as u16) & 0xFF;
 
                         // Set the Zero flag
                         if (self.x_reg & 0xFF) == 0 {
@@ -846,7 +707,7 @@ impl Ricoh5A22 {
                     }
                     // For 16 bit Index registers
                     false => {
-                        self.x_reg += 1;
+                        self.x_reg = self.x_reg.wrapping_add(1);
 
                         // Set the Zero flag
                         if self.x_reg == 0 {
@@ -1106,7 +967,7 @@ impl Ricoh5A22 {
                     // 8 bit Accumulator
                     true => {
                         // Read value from memory
-                        let val = self.read_u8(mem, addr);
+                        let val = self.read_u8(mem, addr, self.dbr);
 
                         // Set A register
                         self.a_reg = (self.a_reg & 0xFF00) | val as u16;
@@ -1129,7 +990,7 @@ impl Ricoh5A22 {
                     }
                     // 16 bit Accumulator
                     false => {
-                        let val = self.read_u16(mem, addr);
+                        let val = self.read_u16(mem, addr, self.dbr);
 
                         //Set A register
                         self.a_reg = val;
@@ -1403,6 +1264,49 @@ impl Ricoh5A22 {
 
                 Ok(3)
             }
+            Instruction(Opcode::INA, Value::Implied) => {
+                println!("INA");
+
+                match self.p_reg.contains(FLAG_M) {
+                    // For 8 bit Index registers
+                    true => {
+                        self.a_reg = ((self.a_reg as u8).wrapping_add(1) as u16) & 0xFF;
+
+                        // Set the Zero flag
+                        if (self.a_reg & 0xFF) == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the N flag to the most significant bit
+                        if self.a_reg & 0x80 == 0x80 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+                    }
+                    // For 16 bit Index registers
+                    false => {
+                        self.a_reg = self.a_reg.wrapping_add(1);
+
+                        // Set the Zero flag
+                        if self.a_reg == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the N flag to the most significant bit
+                        if self.a_reg & 0x8000 == 0x8000 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+                    }
+                }
+                Ok(2)
+            }
             Instruction(Opcode::Unknown(op), _) => {
                 Err(format!("Unknown instruction: ${:X}", op))
             }
@@ -1413,7 +1317,7 @@ impl Ricoh5A22 {
         }
     }
 
-    pub fn read_u8(&self, mem: &Memory, addr: u16) -> u8 {
+    pub fn read_u8(&self, mem: &Memory, addr: u16, bank: u8) -> u8 {
         match addr {
             0x2000 => 0u8,
             0x4210 => 0x42u8,
@@ -1426,16 +1330,16 @@ impl Ricoh5A22 {
             0x4350...0x4356 => 0u8,
             0x4360...0x4366 => 0u8,
             0x4370...0x4376 => self.DMA7[(addr - 0x4370) as usize],
-            _ => mem.peek_u8(addr)
+            _ => mem.peek_u8(addr, bank)
         }
     }
 
-    pub fn read_u16(&self, mem: &Memory, addr: u16) -> u16 {
-        (self.read_u8(mem, addr) as u16) | ((self.read_u8(mem, addr + 1) as u16) << 8)
+    pub fn read_u16(&self, mem: &Memory, addr: u16, bank: u8) -> u16 {
+        (self.read_u8(mem, addr, bank) as u16) | ((self.read_u8(mem, addr + 1, bank) as u16) << 8)
     }
 
     pub fn read_u8_pc(&mut self, mem: &Memory) -> u8 {
-        let val = self.read_u8(mem, self.pc);
+        let val = self.read_u8(mem, self.pc, self.pbr);
         self.pc = self.pc.wrapping_add(1);
         val
     }
@@ -1458,7 +1362,7 @@ impl Ricoh5A22 {
     pub fn pull_u8(&mut self, mem: &Memory) -> u8 {
         self.stack_ptr += 1;
         let stack_ptr = self.stack_ptr;
-        self.read_u8(mem, stack_ptr)
+        self.read_u8(mem, stack_ptr, 0)
     }
 
     pub fn pull_u16(&mut self, mem: &Memory) -> u16 {
@@ -1477,11 +1381,60 @@ impl Ricoh5A22 {
                 println!("TODO: INIDISP #${:X}", val);
                 self.inidisp = val;
             }
-            0x2101...0x2117 => {
+            0x2101...0x2114 => {
                 println!("TODO: REGISTERS 0x2101...0x2120 ({:X})", addr);
             }
-            0x2118...0x2119 => {
-                // TODO: VRAM
+            0x2115 => {
+                println!("VMAIN: #${:X}", val);
+                self.VMAIN = VMAIN::from(val);
+                println!("{:?}", self.VMAIN);
+            }
+            0x2116 => {
+                println!("VMADDL: #${:X}", val);
+                unsafe { Scrn::VRAM_ADDR = (Scrn::VRAM_ADDR & 0xFF00) | val as u16; }
+            }
+            0x2117 => {
+                println!("VMADDH: #${:X}", val);
+                unsafe { Scrn::VRAM_ADDR = (Scrn::VRAM_ADDR & 0x00FF) | ((val as u16) << 8); }
+            }
+            0x2116...0x2117 => {
+                println!("TODO: VMADD ({:X}, {:X})", addr, val);
+            }
+            0x2118 => {
+                match self.VMAIN.remap {
+                    VREMAP::None => {
+                        unsafe {
+                            Scrn::VRAM[Scrn::VRAM_ADDR as usize] = (Scrn::VRAM[Scrn::VRAM_ADDR as usize] & 0xFF00) | val as u16;
+                        
+                            if self.VMAIN.increment == VINC::Byte {
+                                match self.VMAIN.amount {
+                                    VINCAM::One => Scrn::VRAM_ADDR += 1,
+                                    VINCAM::ThirtyTwo => Scrn::VRAM_ADDR += 32,
+                                    VINCAM::OneTwentyEight => Scrn::VRAM_ADDR += 128,
+                                }
+                            }
+                        }
+                    }
+                    _ => panic!("VRAM Remap not supported: {:?}", self.VMAIN),
+                }
+            }
+            0x2119 => {
+                match self.VMAIN.remap {
+                    VREMAP::None => {
+                        unsafe {
+                            Scrn::VRAM[Scrn::VRAM_ADDR as usize] = (Scrn::VRAM[Scrn::VRAM_ADDR as usize] & 0xFF00) | val as u16;
+                        
+                            if self.VMAIN.increment == VINC::Word {
+                                match self.VMAIN.amount {
+                                    VINCAM::One => Scrn::VRAM_ADDR += 1,
+                                    VINCAM::ThirtyTwo => Scrn::VRAM_ADDR += 32,
+                                    VINCAM::OneTwentyEight => Scrn::VRAM_ADDR += 128,
+                                }
+                            }
+                        }
+                    }
+                    _ => panic!("VRAM Remap not supported: {:?}", self.VMAIN),
+                }
             }
             0x2119..0x2121 => {
                 println!("TODO: REGISTERS 0x2101...0x2120 ({:X})", addr);
@@ -1518,8 +1471,8 @@ impl Ricoh5A22 {
                 println!("NMITIMEN: #${:X}", val);
                 self.nmitimen = val;
             }
-            0x4201 => {
-                println!("TODO: SLHV ${:X}", addr);
+            0x4201...0x4203 => {
+                println!("TODO: WRIO/WRMPY(A/B) ${:X}", addr);
             }
             0x420B => {
                 println!("MDMAEN: #${:X}", val);
@@ -1534,8 +1487,8 @@ impl Ricoh5A22 {
                                         let desta = 0x2100 | self.DMA_dest[0] as u16;
                                         let destb = if desta + 1 > 0x21FF { 0x2100 } else { desta + 1 };
                                         let addr = self.DMA_addr[0];
-                                        let a = self.read_u8(mem, addr);
-                                        let b = self.read_u8(mem, addr + 1);
+                                        let a = self.read_u8(mem, addr + 0, self.DMA_bank[0]);
+                                        let b = self.read_u8(mem, addr + 1, self.DMA_bank[0]);
                                         self.write_u8(mem, desta, a);
                                         self.write_u8(mem, destb, b);
 
@@ -1548,7 +1501,7 @@ impl Ricoh5A22 {
                                     }
                                     DMATransferMode::RW => {
                                         let dest = 0x2100 | self.DMA_dest[0] as u16;
-                                        let a = self.read_u8(mem, self.DMA_addr[0]);
+                                        let a = self.read_u8(mem, self.DMA_addr[0], self.DMA_bank[0]);
                                         self.write_u8(mem, dest, a);
 
                                         match control.transfer {
@@ -1564,9 +1517,7 @@ impl Ricoh5A22 {
                             _ => panic!("Unsupported DMA mode: {:?}", control)
                         }
                     }
-
                 }
-                self.mdmaen = val;
             }
             0x420C => {
                 println!("HDMAEN: #${:X}", val);

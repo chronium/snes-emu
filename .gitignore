@@ -11,3 +11,4 @@ Cargo.lock
 
 *.sfc
 *.smc
+*.fig
