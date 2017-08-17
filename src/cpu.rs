@@ -45,6 +45,12 @@ pub struct Ricoh5A22 {
     DMA_dest: [u8; 7],
     DMAP: [DMAControl; 7],
     VMAIN: VMAIN,
+    BGMODE: BGMODE,
+    BGXSC: [BGXSC; 4],
+    BG12NBA: BGNBA,
+    BG34NBA: BGNBA,
+    TM: SCRDES,
+    TS: SCRDES,
 }
 
 impl Ricoh5A22 {
@@ -1307,6 +1313,59 @@ impl Ricoh5A22 {
                 }
                 Ok(2)
             }
+            Instruction(Opcode::STY, Value::Absolute(addr)) => {
+                println!("STY ${:X}", addr);
+
+                // We got Rust again!
+                let y = self.y_reg;
+                
+                // Store Y at address
+                match self.p_reg.contains(FLAG_X) {
+                    // If Index registers are 8 bit
+                    true => {
+                        self.write_u8(mem, addr, (y & 0xFF) as u8);
+
+                        // Set the Zero flag
+                        if (y & 0xFF) == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the N flag to the most significant bit
+                        if self.y_reg & 0x80 == 0x80 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+
+                        Ok(5)
+                    }
+                    // If Index registers are 16 bit
+                    false => {
+                        self.write_u16(mem, addr, y);
+
+                        // Set the Zero flag
+                        if self.y_reg == 0 {
+                            self.p_reg.insert(FLAG_Z);
+                        } else {
+                            self.p_reg.remove(FLAG_Z);
+                        }
+
+                        // Set the N flag to the most significant bit
+                        if self.y_reg & 0x80 == 0x80 {
+                            self.p_reg.insert(FLAG_N);
+                        } else {
+                            self.p_reg.remove(FLAG_N);
+                        }
+
+                        Ok(4)
+                    }
+                }
+            }
+            Instruction(Opcode::HLT, _) => {
+                Err(String::from("Halt!"))
+            }
             Instruction(Opcode::Unknown(op), _) => {
                 Err(format!("Unknown instruction: ${:X}", op))
             }
@@ -1381,7 +1440,48 @@ impl Ricoh5A22 {
                 println!("TODO: INIDISP #${:X}", val);
                 self.inidisp = val;
             }
-            0x2101...0x2114 => {
+            0x2101...0x2104 => {
+                println!("TODO: REGISTERS 0x2101...0x2120 ({:X})", addr);
+            }
+            0x2105 => {
+                println!("BGMODE: #${:X}", val);
+                self.BGMODE = BGMODE::from(val);
+                println!("{:?}", self.BGMODE);
+            }
+            0x2106 => {
+                println!("TODO: REGISTERS 0x2101...0x2120 ({:X})", addr);
+            }
+            0x2107 => {
+                println!("BG1SC: #${:X}", val);
+                self.BGXSC[0] = BGXSC::from(val);
+                println!("BG1SC: {:?}", self.BGXSC[0]);
+            }
+            0x2108 => {
+                println!("BG2SC: #${:X}", val);
+                self.BGXSC[1] = BGXSC::from(val);
+                println!("BG2SC: {:?}", self.BGXSC[1]);
+            }
+            0x2109 => {
+                println!("BG3SC: #${:X}", val);
+                self.BGXSC[2] = BGXSC::from(val);
+                println!("BG3SC: {:?}", self.BGXSC[2]);
+            }
+            0x210A => {
+                println!("BG4SC: #${:X}", val);
+                self.BGXSC[3] = BGXSC::from(val);
+                println!("BG4SC: {:?}", self.BGXSC[3]);
+            }
+            0x210B => {
+                println!("BG12NBA: #${:X}", val);
+                self.BG12NBA = BGNBA::from(val);
+                println!("BG12NBA: {:?}", self.BG12NBA);
+            }
+            0x210C => {
+                println!("BG34NBA: #${:X}", val);
+                self.BG34NBA = BGNBA::from(val);
+                println!("BG34NBA: {:?}", self.BG34NBA);
+            }
+            0x210D...0x2114 => {
                 println!("TODO: REGISTERS 0x2101...0x2120 ({:X})", addr);
             }
             0x2115 => {
@@ -1398,7 +1498,7 @@ impl Ricoh5A22 {
                 unsafe { Scrn::VRAM_ADDR = (Scrn::VRAM_ADDR & 0x00FF) | ((val as u16) << 8); }
             }
             0x2116...0x2117 => {
-                println!("TODO: VMADD ({:X}, {:X})", addr, val);
+                println!("TODO: VMADD (${:X}, #${:X})", addr, val);
             }
             0x2118 => {
                 match self.VMAIN.remap {
@@ -1422,7 +1522,7 @@ impl Ricoh5A22 {
                 match self.VMAIN.remap {
                     VREMAP::None => {
                         unsafe {
-                            Scrn::VRAM[Scrn::VRAM_ADDR as usize] = (Scrn::VRAM[Scrn::VRAM_ADDR as usize] & 0xFF00) | val as u16;
+                            Scrn::VRAM[Scrn::VRAM_ADDR as usize] = (Scrn::VRAM[Scrn::VRAM_ADDR as usize] & 0x00FF) | ((val as u16) << 8);
                         
                             if self.VMAIN.increment == VINC::Word {
                                 match self.VMAIN.amount {
@@ -1450,9 +1550,23 @@ impl Ricoh5A22 {
                 unsafe {
                     Scrn::PALETTE[Scrn::PALETTE_INDEX as usize] = val;
                     Scrn::PALETTE_INDEX += 1;
+                    println!("{:X}", Scrn::PALETTE_INDEX);
                 }
             }
-            0x2123...0x2133 => {
+            0x2123...0x212B => {
+                println!("TODO: REGISTERS 0x2123...0x2133 ({:X})", addr);
+            }
+            0x212C => {
+                println!("TM: #${:X}", val);
+                self.TM = SCRDES::from(val);
+                println!("TM: {:?}", self.TM);
+            }
+            0x212D => {
+                println!("TS: #${:X}", val);
+                self.TS = SCRDES::from(val);
+                println!("TS: {:?}", self.TS);
+            }
+            0x212E...0x2133 => {
                 println!("TODO: REGISTERS 0x2123...0x2133 ({:X})", addr);
             }
             0x213E => {
@@ -1497,6 +1611,10 @@ impl Ricoh5A22 {
                                             DMATransfer::Adjusted => {
                                                 self.DMA_addr[0] += 2;
                                             }
+                                        }
+
+                                        if i + 1 >= self.DMA_size[0] / 2 {
+                                            break;
                                         }
                                     }
                                     DMATransferMode::RW => {

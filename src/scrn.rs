@@ -32,14 +32,23 @@ pub struct Screen {
 
 #[inline]
 pub fn get_color(color: u16) -> u32 {
-    let r = color & 0b000000000011111;
+    /*let r = color & 0b000000000011111;
     let g = color & 0b000001111100000;
     let b = color & 0b111110000000000;
-    let R = (r * 255) / 31;
-    let G = (g * 255) / 31;
-    let B = (b * 255) / 31;
+    let r = r >> 0;
+    let g = g >> 5;
+    let b = b >> 10;
+    let r = (r * 255) / 31;
+    let g = (g * 255) / 31;
+    let b = (b * 255) / 31;
 
-    (((R as u32) << 16) & 0xFF0000) | (((G as u32) << 8) & 0x00FF00) | (((B as u32) << 0 )& 0x0000FF) | 0xFF000000
+    let r = ((r as u32) << 16) & 0xFF0000;
+    let g = ((g as u32) << 8) & 0x00FF00;
+    let b = ((b as u32) << 0) & 0x0000FF;*/
+
+    (((((((color & 0b0000000000011111) >> 00) * 255) / 31) as u32) << 16) & 0xFF0000) | 
+    (((((((color & 0b0000001111100000) >> 05) * 255) / 31) as u32) << 08) & 0x00FF00) |
+    (((((((color & 0b0111110000000000) >> 10) * 255) / 31) as u32) << 00) & 0x0000FF)
 }
 
 pub fn draw_loop<F>(rate: u64, mut callback: F) where 
@@ -87,6 +96,17 @@ impl Screen {
                 let buff = &mut buffer.lock().unwrap();
                 for i in buff.iter_mut() {
                     *i = unsafe { get_color((Scrn::PALETTE[0] as u16) | ((Scrn::PALETTE[1] as u16) << 8)) };
+                }
+
+                unsafe {
+                    for y in 0..7 {
+                        let word = Scrn::VRAM[8 + y];
+                        for x in 0...7 {
+                            let col1 = (((word & 0xFF) >> x) as u8) & 0b1;
+                            let col1 = col1 as usize;
+                            buff[x + y * width] = get_color((Scrn::PALETTE[col1 * 2] as u16) | ((Scrn::PALETTE[col1 * 2 + 1] as u16) << 8));
+                        }
+                    }
                 }
 
                 window.update_with_buffer(&buff);

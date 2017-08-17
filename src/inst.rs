@@ -2,7 +2,7 @@ use cpu::*;
 use mem::Memory;
 use snes::SNES;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Value {
     Implied,
     Immediate8(u8),
@@ -78,6 +78,7 @@ pub enum Opcode {
     SEI,        //                         78
     STA,        //                85                      8D
     STX,        //                   86                      8E
+    STY,        //                                     8C
     TXS,        //                               9A 
     STZ,        //             74 9C
     LDY,        // A0
@@ -95,6 +96,7 @@ pub enum Opcode {
     XBA,        //                                  EB
     PLX,        //                               FA
     XCE,        //                                  FB
+    HLT,
     Unknown(u8), 
 }
 
@@ -113,7 +115,13 @@ impl Instruction {
             0x2B => implied!(PLD),                                  // 0x2B PLD
             0x48 => implied!(PHA),                                  // 0x48 PHA
             0x4B => implied!(PHK),                                  // 0x4B PHK
-            0x4C => absolute!(JMP, cpu, mem),                       // 0x4C JMP addr
+            0x4C => { 
+                let jmp = absolute!(JMP, cpu, mem);                       // 0x4C JMP addr
+                if jmp.1 == Value::Absolute(cpu.pc - 3) {
+                    return Instruction(Opcode::HLT, Value::Implied);
+                }
+                jmp
+            }
             0x58 => implied!(CLI),                                  // 0x58 CLI
             0x5B => implied!(TCD),                                  // 0x5B TCD/TAD
             0x60 => implied!(RTS),                                  // 0x60 RTS
@@ -123,6 +131,7 @@ impl Instruction {
             0x78 => implied!(SEI),                                  // 0x78 SEI
             0x85 => direct_page!(STA, cpu, mem),                    // 0x85 STA dp
             0x86 => direct_page!(STX, cpu, mem),                    // 0x86 STX dp
+            0x8C => absolute!(STY, cpu, mem),                       // 0x8C STY addr
             0x8D => absolute!(STA, cpu, mem),                       // 0x8D STA addr
             0x8E => absolute!(STX, cpu, mem),                       // 0x8E STX addr
             0x9A => implied!(TXS),                                  // 0x9A TXS

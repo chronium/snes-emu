@@ -232,3 +232,175 @@ impl From<u8> for VMAIN {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub enum BGMODES {
+    Mode0,
+    Mode1,
+    Mode2,
+    Mode3,
+    Mode4,
+    Mode5,
+    Mode6,
+    Mode7,  // The good one.
+}
+
+impl Default for BGMODES {
+    fn default() -> BGMODES {
+        BGMODES::Mode0
+    }
+}
+
+impl From<u8> for BGMODES {
+    fn from(val: u8) -> BGMODES {
+        match val & 0b111 {
+            0b000 => BGMODES::Mode0,
+            0b001 => BGMODES::Mode1,
+            0b010 => BGMODES::Mode2,
+            0b011 => BGMODES::Mode3,
+            0b100 => BGMODES::Mode4,
+            0b101 => BGMODES::Mode5,
+            0b110 => BGMODES::Mode6,
+            0b111 => BGMODES::Mode7,
+            _ => BGMODES::Mode0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CHARSIZE {
+    S8,
+    S16,
+}
+
+impl Default for CHARSIZE {
+    fn default() -> CHARSIZE {
+        CHARSIZE::S8
+    }
+}
+
+impl From<u8> for CHARSIZE {
+    fn from(val: u8) -> CHARSIZE {
+        match val & 0b1 {
+            0b1 => CHARSIZE::S16,
+            _ => CHARSIZE::S8,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BGCHAR(CHARSIZE, CHARSIZE, CHARSIZE, CHARSIZE);
+
+impl From<u8> for BGCHAR {
+    fn from(val: u8) -> BGCHAR {
+        let bg1 = CHARSIZE::from(val >> 4);
+        let bg2 = CHARSIZE::from(val >> 5);
+        let bg3 = CHARSIZE::from(val >> 6);
+        let bg4 = CHARSIZE::from(val >> 7);
+        BGCHAR(bg1, bg2, bg3, bg4)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BGMODE {
+    bg_sizes: BGCHAR,
+    mode: BGMODES,
+}
+
+impl From<u8> for BGMODE {
+    fn from(val: u8) -> Self {
+        let mode = BGMODES::from(val);
+        let size = BGCHAR::from(val);
+
+        Self {
+            bg_sizes: size,
+            mode: mode,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BGSIZE {
+    S32x32,
+    S64x32,
+    S32x64,
+    S64x64,
+}
+
+impl Default for BGSIZE {
+    fn default() -> BGSIZE {
+        BGSIZE::S32x32
+    }
+}
+
+impl From<u8> for BGSIZE {
+    fn from(val: u8) -> BGSIZE {
+        match val & 0b11 {
+            0b00 => BGSIZE::S32x32,
+            0b01 => BGSIZE::S64x32,
+            0b10 => BGSIZE::S32x64,
+            0b11 => BGSIZE::S64x64,
+            _ => BGSIZE::S32x32,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BGXSC {
+    addr: u16,
+    size: BGSIZE,
+}
+
+impl From<u8> for BGXSC {
+    fn from(val: u8) -> Self {
+        let addr = ((val & 0xFC) as u16) << 8;
+        let size = BGSIZE::from(val);
+
+        Self {
+            addr: addr,
+            size: size,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BGNBA(u16, u16);
+
+impl From<u8> for BGNBA {
+    fn from(val: u8) -> BGNBA {
+        let a = ((val as u16) & 0x0F) << 12;
+        let b = ((val as u16) & 0xF0) << 4;
+
+        Self {
+            0: a,
+            1: b,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SCRDES {
+    bg1: bool,
+    bg2: bool,
+    bg3: bool,
+    bg4: bool,
+    obj: bool,
+}
+
+impl From<u8> for SCRDES {
+    fn from(val: u8) -> SCRDES {
+        let bg1 = (val & 0b00001) == 0b00001;
+        let bg2 = (val & 0b00010) == 0b00010;
+        let bg3 = (val & 0b00100) == 0b00100;
+        let bg4 = (val & 0b01000) == 0b01000;
+        let obj = (val & 0b10000) == 0b10000;
+
+        Self {
+            bg1: bg1,
+            bg2: bg2,
+            bg3: bg3,
+            bg4: bg4,
+            obj: obj,
+        }
+    }
+}

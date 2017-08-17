@@ -3,6 +3,7 @@
 #![feature(drop_types_in_const)]
 #![feature(integer_atomics)]
 #![feature(range_contains)]
+#![feature(relaxed_adts)]
 #![feature(box_syntax)]
 
 #[macro_use]
@@ -161,6 +162,24 @@ fn main() {
                                 print!("{:02X} ", cpu.read_u8(&snes.mem, i, 0u8));
                             }
                             print!("{:02X}", cpu.read_u8(&snes.mem, ((addr & 0xFFF0) | 0xF), 0u8));
+                            println!("]");
+                        }
+                        "vm" => {
+                            let addr = u16::from_str_radix(split[1], 16).unwrap();
+                            print!("{:04X}: [", (addr & 0xFFF0));
+                            for i in (addr & 0xFFF0)...((addr & 0xFFF0) | 0xE) {
+                                unsafe { print!("{:04X} ", Scrn::VRAM[i as usize]); }
+                            }
+                            unsafe { print!("{:04X}", Scrn::VRAM[((addr & 0xFFF0) | 0xF) as usize]); }
+                            println!("]");
+                        }
+                        "vc" => {
+                            let addr = u16::from_str_radix(split[1], 16).unwrap();
+                            print!("{:04X}: [", (addr & 0xFFF0));
+                            for i in (addr & 0xFFF0)...((addr & 0xFFF0) | 0xE) {
+                                unsafe { print!("{:02X} ", Scrn::PALETTE[i as usize]); }
+                            }
+                            unsafe { print!("{:02X}", Scrn::VRAM[((addr & 0xFFF0) | 0xF) as usize]); }
                             println!("]");
                         }
                         _ => print!("Unknown command: {}", line)
